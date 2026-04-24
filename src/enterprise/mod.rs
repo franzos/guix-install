@@ -1,6 +1,8 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use flate2::read::GzDecoder;
+use tar::Archive;
 
 /// Downloaded and extracted enterprise configuration.
 ///
@@ -13,35 +15,31 @@ pub struct EnterpriseConfig {
     pub config_json: Option<serde_json::Value>,
 }
 
-const TARBALL_PATH: &str = "/tmp/guix-install-config.tar.gz";
 const EXTRACT_DIR: &str = "/tmp/guix-install-config";
 
 /// Download and extract an enterprise config tarball.
 ///
-/// The tarball is fetched from `{config_url}/{config_id}.tar.gz` using curl,
-/// then extracted. The archive must contain at least a `system.scm` file
-/// (either at the top level or inside a single subdirectory).
+/// Fetches `{config_url}/{config_id}.tar.gz` over HTTPS and streams the
+/// response through gzip decompression and tar extraction into `EXTRACT_DIR`.
+/// No intermediate tarball is written to disk. The archive must contain at
+/// least a `system.scm` file (either at the top level or inside a single
+/// subdirectory).
 pub fn fetch_enterprise_config(config_id: &str, config_url: &str) -> Result<EnterpriseConfig> {
     let url = format!("{config_url}/{config_id}.tar.gz");
 
-    // Download using curl — always available on installer ISOs
-    crate::exec::run_cmd(&["curl", "-fSL", "-o", TARBALL_PATH, &url])
-        .with_context(|| format!("failed to download enterprise config from {url}"))?;
-
-    // Create extract directory
     std::fs::create_dir_all(EXTRACT_DIR)
         .with_context(|| format!("failed to create extract directory {EXTRACT_DIR}"))?;
 
-    // Extract tarball
-    crate::exec::run_cmd(&["tar", "xzf", TARBALL_PATH, "-C", EXTRACT_DIR])
-        .context("failed to extract config tarball")?;
+    let response = ureq::get(&url)
+        .call()
+        .with_context(|| format!("failed to download enterprise config from {url}"))?;
 
-    let config = load_extracted_config(EXTRACT_DIR)?;
+    let gz = GzDecoder::new(response.into_reader());
+    Archive::new(gz)
+        .unpack(EXTRACT_DIR)
+        .with_context(|| format!("failed to extract config tarball from {url}"))?;
 
-    // Clean up the tarball (keep extracted dir until install finishes)
-    let _ = std::fs::remove_file(TARBALL_PATH);
-
-    Ok(config)
+    load_extracted_config(EXTRACT_DIR)
 }
 
 /// Load an enterprise config from an already-extracted directory.
@@ -97,10 +95,9 @@ fn read_config_file_opt(dir: &str, name: &str) -> Option<String> {
     read_config_file(dir, name).ok()
 }
 
-/// Clean up extracted config files and any leftover tarball.
+/// Clean up extracted config files.
 pub fn cleanup() {
     let _ = std::fs::remove_dir_all(EXTRACT_DIR);
-    let _ = std::fs::remove_file(TARBALL_PATH);
 }
 
 #[cfg(test)]

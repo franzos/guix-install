@@ -4,6 +4,7 @@ pub mod enterprise;
 pub mod exec;
 pub mod install;
 pub mod mode;
+pub mod passwd;
 pub mod repl;
 pub mod resume;
 pub mod scheme;

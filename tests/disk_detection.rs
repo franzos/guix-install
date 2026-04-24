@@ -1,14 +1,16 @@
 use guix_install::config::{
     BlockDevice, EncryptionConfig, Filesystem, Firmware, SystemConfig, UserAccount,
 };
+use guix_install::disk::Action;
 use guix_install::disk::detect::{format_device, parse_lsblk_json};
 use guix_install::disk::format::{
     encryption_commands, format_commands, format_efi_commands, format_root_commands,
 };
-use guix_install::disk::mount::{mount_commands, swap_commands};
+use guix_install::disk::mount::{mount_actions, swap_actions};
 use guix_install::disk::partition::partition_commands;
 use guix_install::disk::partition_path;
 use guix_install::mode::InstallMode;
+use std::path::PathBuf;
 
 // --- lsblk parsing fixtures ---
 
@@ -304,31 +306,40 @@ fn format_commands_bios_plain() {
     assert_eq!(cmds[1][0], "tune2fs");
 }
 
-// === Mount Commands ===
+// === Mount Actions ===
 
 #[test]
 fn mount_bios_sequence() {
     let mut config = test_config("/dev/sda", "sda");
     config.firmware = Firmware::Bios;
 
-    let cmds = mount_commands(&config);
-    assert_eq!(cmds.len(), 3);
-    assert_eq!(cmds[0], vec!["mount", "LABEL=my-root", "/mnt"]);
-    assert_eq!(cmds[1], vec!["herd", "start", "cow-store", "/mnt"]);
-    assert_eq!(cmds[2], vec!["mkdir", "-p", "/mnt/etc/guix"]);
+    let actions = mount_actions(&config);
+    assert_eq!(actions.len(), 3);
+    assert_eq!(actions[0], Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+    assert_eq!(
+        actions[1],
+        Action::cmd(&["herd", "start", "cow-store", "/mnt"])
+    );
+    assert_eq!(actions[2], Action::mkdir("/mnt/etc/guix"));
 }
 
 #[test]
 fn mount_efi_sequence() {
     let config = test_config("/dev/sda", "sda");
 
-    let cmds = mount_commands(&config);
-    assert_eq!(cmds.len(), 5);
-    assert_eq!(cmds[0], vec!["mount", "LABEL=my-root", "/mnt"]);
-    assert_eq!(cmds[1], vec!["mkdir", "-p", "/mnt/boot/efi"]);
-    assert_eq!(cmds[2], vec!["mount", "/dev/sda1", "/mnt/boot/efi"]);
-    assert_eq!(cmds[3], vec!["herd", "start", "cow-store", "/mnt"]);
-    assert_eq!(cmds[4], vec!["mkdir", "-p", "/mnt/etc/guix"]);
+    let actions = mount_actions(&config);
+    assert_eq!(actions.len(), 5);
+    assert_eq!(actions[0], Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+    assert_eq!(actions[1], Action::mkdir("/mnt/boot/efi"));
+    assert_eq!(
+        actions[2],
+        Action::cmd(&["mount", "/dev/sda1", "/mnt/boot/efi"])
+    );
+    assert_eq!(
+        actions[3],
+        Action::cmd(&["herd", "start", "cow-store", "/mnt"])
+    );
+    assert_eq!(actions[4], Action::mkdir("/mnt/etc/guix"));
 }
 
 #[test]
@@ -336,23 +347,30 @@ fn mount_efi_nvme_partition_path() {
     let mut config = test_config("/dev/nvme0n1", "nvme0n1");
     config.firmware = Firmware::Efi;
 
-    let cmds = mount_commands(&config);
-    assert_eq!(cmds[2], vec!["mount", "/dev/nvme0n1p1", "/mnt/boot/efi"]);
+    let actions = mount_actions(&config);
+    assert_eq!(
+        actions[2],
+        Action::cmd(&["mount", "/dev/nvme0n1p1", "/mnt/boot/efi"])
+    );
 }
 
-// === Swap Commands ===
+// === Swap Actions ===
 
 #[test]
 fn swap_default() {
     let config = test_config("/dev/sda", "sda");
-    let cmds = swap_commands(&config);
-    assert_eq!(cmds.len(), 4);
+    let actions = swap_actions(&config);
+    assert_eq!(actions.len(), 3);
 
-    assert_eq!(cmds[0][0], "dd");
-    assert!(cmds[0].contains(&"count=4096".into()));
-    assert_eq!(cmds[1], vec!["chmod", "600", "/mnt/swapfile"]);
-    assert_eq!(cmds[2], vec!["mkswap", "/mnt/swapfile"]);
-    assert_eq!(cmds[3], vec!["swapon", "/mnt/swapfile"]);
+    assert_eq!(
+        actions[0],
+        Action::CreateSwapFile {
+            path: PathBuf::from("/mnt/swapfile"),
+            size_bytes: 4096 * 1024 * 1024,
+        }
+    );
+    assert_eq!(actions[1], Action::cmd(&["mkswap", "/mnt/swapfile"]));
+    assert_eq!(actions[2], Action::cmd(&["swapon", "/mnt/swapfile"]));
 }
 
 #[test]
@@ -360,6 +378,12 @@ fn swap_custom_size() {
     let mut config = test_config("/dev/sda", "sda");
     config.swap_size_mb = 8192;
 
-    let cmds = swap_commands(&config);
-    assert!(cmds[0].contains(&"count=8192".into()));
+    let actions = swap_actions(&config);
+    assert_eq!(
+        actions[0],
+        Action::CreateSwapFile {
+            path: PathBuf::from("/mnt/swapfile"),
+            size_bytes: 8192 * 1024 * 1024,
+        }
+    );
 }

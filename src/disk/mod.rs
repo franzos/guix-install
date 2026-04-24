@@ -1,7 +1,10 @@
+pub mod action;
 pub mod detect;
 pub mod format;
 pub mod mount;
 pub mod partition;
+
+pub use action::Action;
 
 /// Returns the device path for a given partition number.
 ///

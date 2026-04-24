@@ -1,57 +1,49 @@
-use crate::config::{Firmware, SystemConfig};
-use crate::disk::partition_path;
+use std::path::PathBuf;
 
-/// Builds the mount command sequence for the target system.
+use crate::config::{Firmware, SystemConfig};
+use crate::disk::{Action, partition_path};
+
+/// Builds the mount action sequence for the target system.
 ///
 /// Always mounts root by label, then for EFI also mounts the boot partition.
 /// Starts the cow-store and creates config directories.
-pub fn mount_commands(config: &SystemConfig) -> Vec<Vec<String>> {
-    let mut cmds = Vec::new();
+pub fn mount_actions(config: &SystemConfig) -> Vec<Action> {
+    let mut actions = Vec::new();
 
     // Mount root by label
-    cmds.push(strs(&["mount", "LABEL=my-root", "/mnt"]));
+    actions.push(Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
 
     // EFI: create and mount boot partition
     if config.firmware == Firmware::Efi {
-        cmds.push(strs(&["mkdir", "-p", "/mnt/boot/efi"]));
+        actions.push(Action::mkdir("/mnt/boot/efi"));
         let part1 = partition_path(&config.disk.dev_path, 1);
-        cmds.push(
-            vec!["mount", &part1, "/mnt/boot/efi"]
-                .into_iter()
-                .map(String::from)
-                .collect(),
-        );
+        actions.push(Action::cmd(&["mount", &part1, "/mnt/boot/efi"]));
     }
 
     // Start cow-store overlay
-    cmds.push(strs(&["herd", "start", "cow-store", "/mnt"]));
+    actions.push(Action::cmd(&["herd", "start", "cow-store", "/mnt"]));
 
     // Create config directory
-    cmds.push(strs(&["mkdir", "-p", "/mnt/etc/guix"]));
+    actions.push(Action::mkdir("/mnt/etc/guix"));
 
-    cmds
+    actions
 }
 
-/// Builds the swap file creation commands.
+/// Builds the swap file creation actions.
 ///
-/// Creates a swap file at `/mnt/swapfile` of the configured size.
-pub fn swap_commands(config: &SystemConfig) -> Vec<Vec<String>> {
+/// Creates a fully-allocated swap file at `/mnt/swapfile` of the configured
+/// size (zero-filled, 0600), then runs `mkswap` and `swapon`.
+pub fn swap_actions(config: &SystemConfig) -> Vec<Action> {
+    let path = PathBuf::from("/mnt/swapfile");
+    let size_bytes = (config.swap_size_mb as u64) * 1024 * 1024;
     vec![
-        vec![
-            "dd".to_string(),
-            "if=/dev/zero".to_string(),
-            "of=/mnt/swapfile".to_string(),
-            "bs=1MiB".to_string(),
-            format!("count={}", config.swap_size_mb),
-        ],
-        strs(&["chmod", "600", "/mnt/swapfile"]),
-        strs(&["mkswap", "/mnt/swapfile"]),
-        strs(&["swapon", "/mnt/swapfile"]),
+        Action::CreateSwapFile {
+            path: path.clone(),
+            size_bytes,
+        },
+        Action::cmd(&["mkswap", "/mnt/swapfile"]),
+        Action::cmd(&["swapon", "/mnt/swapfile"]),
     ]
-}
-
-fn strs(args: &[&str]) -> Vec<String> {
-    args.iter().map(|s| String::from(*s)).collect()
 }
 
 #[cfg(test)]
@@ -73,19 +65,22 @@ mod tests {
         }
     }
 
-    // --- mount_commands ---
+    // --- mount_actions ---
 
     #[test]
     fn mount_bios() {
         let mut config = test_config();
         config.firmware = Firmware::Bios;
 
-        let cmds = mount_commands(&config);
+        let actions = mount_actions(&config);
         // mount root + cow-store + mkdir = 3
-        assert_eq!(cmds.len(), 3);
-        assert_eq!(cmds[0], vec!["mount", "LABEL=my-root", "/mnt"]);
-        assert_eq!(cmds[1], vec!["herd", "start", "cow-store", "/mnt"]);
-        assert_eq!(cmds[2], vec!["mkdir", "-p", "/mnt/etc/guix"]);
+        assert_eq!(actions.len(), 3);
+        assert_eq!(actions[0], Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+        assert_eq!(
+            actions[1],
+            Action::cmd(&["herd", "start", "cow-store", "/mnt"])
+        );
+        assert_eq!(actions[2], Action::mkdir("/mnt/etc/guix"));
     }
 
     #[test]
@@ -93,14 +88,20 @@ mod tests {
         let mut config = test_config();
         config.firmware = Firmware::Efi;
 
-        let cmds = mount_commands(&config);
+        let actions = mount_actions(&config);
         // mount root + mkdir boot + mount boot + cow-store + mkdir config = 5
-        assert_eq!(cmds.len(), 5);
-        assert_eq!(cmds[0], vec!["mount", "LABEL=my-root", "/mnt"]);
-        assert_eq!(cmds[1], vec!["mkdir", "-p", "/mnt/boot/efi"]);
-        assert_eq!(cmds[2], vec!["mount", "/dev/sda1", "/mnt/boot/efi"]);
-        assert_eq!(cmds[3], vec!["herd", "start", "cow-store", "/mnt"]);
-        assert_eq!(cmds[4], vec!["mkdir", "-p", "/mnt/etc/guix"]);
+        assert_eq!(actions.len(), 5);
+        assert_eq!(actions[0], Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+        assert_eq!(actions[1], Action::mkdir("/mnt/boot/efi"));
+        assert_eq!(
+            actions[2],
+            Action::cmd(&["mount", "/dev/sda1", "/mnt/boot/efi"])
+        );
+        assert_eq!(
+            actions[3],
+            Action::cmd(&["herd", "start", "cow-store", "/mnt"])
+        );
+        assert_eq!(actions[4], Action::mkdir("/mnt/etc/guix"));
     }
 
     #[test]
@@ -116,27 +117,30 @@ mod tests {
             root_partition_uuid: None,
         };
 
-        let cmds = mount_commands(&config);
-        assert_eq!(cmds[2], vec!["mount", "/dev/nvme0n1p1", "/mnt/boot/efi"]);
+        let actions = mount_actions(&config);
+        assert_eq!(
+            actions[2],
+            Action::cmd(&["mount", "/dev/nvme0n1p1", "/mnt/boot/efi"])
+        );
     }
 
-    // --- swap_commands ---
+    // --- swap_actions ---
 
     #[test]
     fn swap_default_size() {
         let config = test_config();
-        let cmds = swap_commands(&config);
-        assert_eq!(cmds.len(), 4);
+        let actions = swap_actions(&config);
+        assert_eq!(actions.len(), 3);
 
-        assert_eq!(cmds[0][0], "dd");
-        assert!(cmds[0].contains(&"if=/dev/zero".into()));
-        assert!(cmds[0].contains(&"of=/mnt/swapfile".into()));
-        assert!(cmds[0].contains(&"bs=1MiB".into()));
-        assert!(cmds[0].contains(&"count=4096".into()));
-
-        assert_eq!(cmds[1], vec!["chmod", "600", "/mnt/swapfile"]);
-        assert_eq!(cmds[2], vec!["mkswap", "/mnt/swapfile"]);
-        assert_eq!(cmds[3], vec!["swapon", "/mnt/swapfile"]);
+        assert_eq!(
+            actions[0],
+            Action::CreateSwapFile {
+                path: PathBuf::from("/mnt/swapfile"),
+                size_bytes: 4096 * 1024 * 1024,
+            }
+        );
+        assert_eq!(actions[1], Action::cmd(&["mkswap", "/mnt/swapfile"]));
+        assert_eq!(actions[2], Action::cmd(&["swapon", "/mnt/swapfile"]));
     }
 
     #[test]
@@ -144,7 +148,13 @@ mod tests {
         let mut config = test_config();
         config.swap_size_mb = 8192;
 
-        let cmds = swap_commands(&config);
-        assert!(cmds[0].contains(&"count=8192".into()));
+        let actions = swap_actions(&config);
+        assert_eq!(
+            actions[0],
+            Action::CreateSwapFile {
+                path: PathBuf::from("/mnt/swapfile"),
+                size_bytes: 8192 * 1024 * 1024,
+            }
+        );
     }
 }

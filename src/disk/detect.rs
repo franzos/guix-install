@@ -1,24 +1,20 @@
-use std::process::Command;
-
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::config::BlockDevice;
+use crate::exec;
 
 /// Runs `lsblk --json --bytes` and returns detected disk devices.
 pub fn detect_block_devices() -> Result<Vec<BlockDevice>> {
-    let output = Command::new("lsblk")
-        .args(["--json", "--bytes", "--output", "NAME,SIZE,TYPE,MODEL,PATH"])
-        .output()
-        .context("failed to run lsblk")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("lsblk failed: {stderr}");
-    }
-
-    let json = String::from_utf8(output.stdout).context("lsblk output is not valid UTF-8")?;
-    parse_lsblk_json(&json)
+    let result = exec::run_cmd(&[
+        "lsblk",
+        "--json",
+        "--bytes",
+        "--output",
+        "NAME,SIZE,TYPE,MODEL,PATH",
+    ])
+    .context("failed to run lsblk")?;
+    parse_lsblk_json(&result.stdout)
 }
 
 /// Parses lsblk JSON output into `BlockDevice` structs.

@@ -1,8 +1,12 @@
+use std::path::Path;
+
 use anyhow::Result;
+use zeroize::Zeroizing;
 
 use crate::config::SystemConfig;
 use crate::enterprise;
 use crate::mode::InstallMode;
+use crate::passwd;
 use crate::resume::InstallState;
 use crate::ui::UserInterface;
 use crate::{disk, exec, scheme};
@@ -111,20 +115,16 @@ fn phase_format(config: &SystemConfig, ui: &dyn UserInterface) -> Result<()> {
 
 fn phase_mount(config: &SystemConfig, ui: &dyn UserInterface) -> Result<()> {
     ui.info("Phase 3/8: Mounting filesystems...");
-    let cmds = disk::mount::mount_commands(config);
-    for cmd in &cmds {
-        let args: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
-        exec::run_cmd(&args)?;
+    for action in disk::mount::mount_actions(config) {
+        action.execute()?;
     }
     Ok(())
 }
 
 fn phase_swap(config: &SystemConfig, ui: &dyn UserInterface) -> Result<()> {
     ui.info("Phase 4/8: Creating swap...");
-    let cmds = disk::mount::swap_commands(config);
-    for cmd in &cmds {
-        let args: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
-        exec::run_cmd(&args)?;
+    for action in disk::mount::swap_actions(config) {
+        action.execute()?;
     }
     Ok(())
 }
@@ -240,12 +240,15 @@ fn phase_install(config: &SystemConfig, ui: &dyn UserInterface) -> Result<()> {
         anyhow::bail!("guix system init failed with exit code {exit}");
     }
 
-    // Set user password via chroot
+    // Set user password by writing directly to /mnt/etc/shadow.
+    // Plaintext never leaves this process (no chroot/chpasswd subprocess);
+    // Zeroizing wipes the clone on drop.
     if let Some(password) = &config.password {
         ui.info("Setting user password...");
+        let root = Path::new("/mnt");
         for user in &config.users {
-            let input = format!("{}:{}", user.name, password);
-            exec::run_cmd_with_stdin(&["chroot", "/mnt", "chpasswd"], &input)?;
+            let copy = Zeroizing::new(password.clone());
+            passwd::set_shadow_password(root, &user.name, copy)?;
         }
     }
 
