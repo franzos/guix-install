@@ -14,8 +14,10 @@ console = "0.15"
 ureq = "2"
 tar = "0.4"
 flate2 = "1"
-sha-crypt = { version = "0.6", features = ["getrandom"] }
+pwhash = "1"
 zeroize = "1"
+rustix = { version = "0.38", features = ["mount", "process"] }
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

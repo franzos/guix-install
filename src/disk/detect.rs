@@ -19,14 +19,21 @@ pub fn detect_block_devices() -> Result<Vec<BlockDevice>> {
 
 /// Parses lsblk JSON output into `BlockDevice` structs.
 ///
-/// Filters to only include entries with `type == "disk"`.
+/// Filters to entries with `type == "disk"` and excludes phantom devices that
+/// can't host an install: floppy drives (`fd*`, even with no media the kernel
+/// reports a 4096-byte placeholder) and anything smaller than 1 MiB (empty
+/// card readers etc.).
 pub fn parse_lsblk_json(json: &str) -> Result<Vec<BlockDevice>> {
+    const MIN_SIZE: u64 = 1024 * 1024;
+
     let parsed: LsblkOutput = serde_json::from_str(json).context("failed to parse lsblk JSON")?;
 
     let devices = parsed
         .blockdevices
         .into_iter()
-        .filter(|d| d.device_type == "disk")
+        .filter(|d| {
+            d.device_type == "disk" && d.size.unwrap_or(0) >= MIN_SIZE && !d.name.starts_with("fd")
+        })
         .map(|d| BlockDevice {
             name: d.name,
             dev_path: d.path.unwrap_or_default(),
@@ -212,11 +219,28 @@ mod tests {
     }
 
     #[test]
+    fn phantom_disks_filtered() {
+        // fd0 with the kernel's 4096-byte "no media" placeholder, a 0-byte
+        // card reader, and a real disk
+        let json = r#"{
+            "blockdevices": [
+                {"name": "fd0", "size": 4096, "type": "disk", "model": null, "path": "/dev/fd0"},
+                {"name": "fd1", "size": 0, "type": "disk", "model": null, "path": "/dev/fd1"},
+                {"name": "mmcblk0", "size": 0, "type": "disk", "model": null, "path": "/dev/mmcblk0"},
+                {"name": "sda", "size": 100000000000, "type": "disk", "model": "Real", "path": "/dev/sda"}
+            ]
+        }"#;
+        let devices = parse_lsblk_json(json).unwrap();
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].name, "sda");
+    }
+
+    #[test]
     fn null_model_filtered() {
         let json = r#"{
             "blockdevices": [
-                {"name": "sda", "size": 100000, "type": "disk", "model": null, "path": "/dev/sda"},
-                {"name": "sdb", "size": 200000, "type": "disk", "model": "  ", "path": "/dev/sdb"}
+                {"name": "sda", "size": 100000000000, "type": "disk", "model": null, "path": "/dev/sda"},
+                {"name": "sdb", "size": 200000000000, "type": "disk", "model": "  ", "path": "/dev/sdb"}
             ]
         }"#;
         let devices = parse_lsblk_json(json).unwrap();

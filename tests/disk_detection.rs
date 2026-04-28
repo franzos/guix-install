@@ -59,6 +59,7 @@ fn test_config(dev_path: &str, dev_name: &str) -> SystemConfig {
         ssh_key: None,
         swap_size_mb: 4096,
         password: None,
+        system_scm_override: None,
     }
 }
 
@@ -333,7 +334,11 @@ fn mount_efi_sequence() {
     assert_eq!(actions[1], Action::mkdir("/mnt/boot/efi"));
     assert_eq!(
         actions[2],
-        Action::cmd(&["mount", "/dev/sda1", "/mnt/boot/efi"])
+        Action::Mount {
+            source: PathBuf::from("/dev/sda1"),
+            target: PathBuf::from("/mnt/boot/efi"),
+            fstype: "vfat".into(),
+        }
     );
     assert_eq!(
         actions[3],
@@ -350,7 +355,11 @@ fn mount_efi_nvme_partition_path() {
     let actions = mount_actions(&config);
     assert_eq!(
         actions[2],
-        Action::cmd(&["mount", "/dev/nvme0n1p1", "/mnt/boot/efi"])
+        Action::Mount {
+            source: PathBuf::from("/dev/nvme0n1p1"),
+            target: PathBuf::from("/mnt/boot/efi"),
+            fstype: "vfat".into(),
+        }
     );
 }
 

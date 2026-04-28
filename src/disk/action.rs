@@ -18,8 +18,19 @@ use crate::exec;
 pub enum Action {
     Cmd(Vec<String>),
     Mkdir(PathBuf),
-    CreateSwapFile { path: PathBuf, size_bytes: u64 },
-    SetPermissions { path: PathBuf, mode: u32 },
+    CreateSwapFile {
+        path: PathBuf,
+        size_bytes: u64,
+    },
+    SetPermissions {
+        path: PathBuf,
+        mode: u32,
+    },
+    Mount {
+        source: PathBuf,
+        target: PathBuf,
+        fstype: String,
+    },
 }
 
 impl Action {
@@ -45,6 +56,25 @@ impl Action {
                 std::fs::set_permissions(path, Permissions::from_mode(*mode))
                     .with_context(|| format!("chmod {:o} {}", mode, path.display()))
             }
+            Action::Mount {
+                source,
+                target,
+                fstype,
+            } => rustix::mount::mount(
+                source.as_path(),
+                target.as_path(),
+                fstype.as_str(),
+                rustix::mount::MountFlags::empty(),
+                "",
+            )
+            .with_context(|| {
+                format!(
+                    "mount {} on {} ({})",
+                    source.display(),
+                    target.display(),
+                    fstype
+                )
+            }),
         }
     }
 }
@@ -119,6 +149,21 @@ mod tests {
         assert_eq!(meta.len(), 4 * 1024 * 1024);
         // Must be 0600 so mkswap is happy
         assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn mount_constructor_equality() {
+        let a = Action::Mount {
+            source: PathBuf::from("/dev/sda1"),
+            target: PathBuf::from("/mnt/boot/efi"),
+            fstype: "vfat".into(),
+        };
+        let b = Action::Mount {
+            source: PathBuf::from("/dev/sda1"),
+            target: PathBuf::from("/mnt/boot/efi"),
+            fstype: "vfat".into(),
+        };
+        assert_eq!(a, b);
     }
 
     #[test]

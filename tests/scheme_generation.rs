@@ -37,6 +37,7 @@ fn base_config() -> SystemConfig {
         ssh_key: None,
         swap_size_mb: 4096,
         password: None,
+        system_scm_override: None,
     }
 }
 

@@ -35,7 +35,11 @@ pub fn fetch_enterprise_config(config_id: &str, config_url: &str) -> Result<Ente
         .with_context(|| format!("failed to download enterprise config from {url}"))?;
 
     let gz = GzDecoder::new(response.into_reader());
-    Archive::new(gz)
+    // Extraction runs as root during install; refuse setuid bits from a
+    // compromised remote config server so they can't survive into the target fs.
+    let mut archive = Archive::new(gz);
+    archive.set_preserve_permissions(false);
+    archive
         .unpack(EXTRACT_DIR)
         .with_context(|| format!("failed to extract config tarball from {url}"))?;
 

@@ -151,13 +151,25 @@ fn phase_config(config: &SystemConfig, ui: &dyn UserInterface) -> Result<()> {
 
         enterprise::cleanup();
     } else {
-        let system_scm = scheme::operating_system::render_operating_system(config);
+        let system_scm = match &config.system_scm_override {
+            Some(custom) => {
+                ui.info("  Using custom system.scm from Advanced configuration.");
+                custom.clone()
+            }
+            None => scheme::operating_system::render_operating_system(config),
+        };
         std::fs::write("/mnt/etc/system.scm", &system_scm)?;
         ui.info("  Wrote /mnt/etc/system.scm");
 
         if let Some(channels) = scheme::channels::render_channels(&config.mode) {
             std::fs::write("/mnt/etc/guix/channels.scm", &channels)?;
             ui.info("  Wrote /mnt/etc/guix/channels.scm");
+        }
+
+        if let Some(password) = &config.password {
+            let pw = Zeroizing::new(password.clone());
+            passwd::seed_shadow(Path::new("/mnt"), &config.users, &pw)?;
+            ui.info("  Seeded /mnt/etc/shadow");
         }
     }
 
@@ -218,7 +230,13 @@ fn phase_pull(config: &SystemConfig, ui: &dyn UserInterface) -> Result<()> {
     Ok(())
 }
 
-/// Tests whether the required Guile modules for the selected mode are loadable.
+/// Tests whether the required channel modules are loadable from the daemon's Guix.
+///
+/// Uses `guix repl` (not bare `guile`) because channel modules — `(nongnu …)`,
+/// `(px …)` — live on Guix's load path, not the system Guile's. On a Panther
+/// install ISO the channels are baked in via `guix-for-channels`, so `guix repl`
+/// resolves them; bare `guile` can only see `(gnu …)` / `(guix …)` and would
+/// trigger an unnecessary `guix pull`.
 fn channels_available(config: &SystemConfig) -> bool {
     let test_module = match &config.mode {
         InstallMode::Guix => return true,
@@ -228,28 +246,29 @@ fn channels_available(config: &SystemConfig) -> bool {
         }
     };
 
-    exec::run_cmd(&["guile", "-c", test_module]).is_ok()
+    exec::run_cmd_with_stdin(&["guix", "repl"], test_module).is_ok()
 }
 
 fn phase_install(config: &SystemConfig, ui: &dyn UserInterface) -> Result<()> {
     ui.info("Phase 8/8: Installing system (this will take a while)...");
 
-    let exit =
-        exec::run_cmd_interactive(&["guix", "system", "init", "/mnt/etc/system.scm", "/mnt"])?;
-    if exit != 0 {
-        anyhow::bail!("guix system init failed with exit code {exit}");
+    // Propagate the chosen locale to `guix system init` so UTF-8 paths
+    // (e.g. nss-certs) and locale-dependent messages work correctly.
+    // Safe: the installer is single-threaded at this point.
+    unsafe {
+        std::env::set_var("LC_ALL", &config.locale);
     }
 
-    // Set user password by writing directly to /mnt/etc/shadow.
-    // Plaintext never leaves this process (no chroot/chpasswd subprocess);
-    // Zeroizing wipes the clone on drop.
-    if let Some(password) = &config.password {
-        ui.info("Setting user password...");
-        let root = Path::new("/mnt");
-        for user in &config.users {
-            let copy = Zeroizing::new(password.clone());
-            passwd::set_shadow_password(root, &user.name, copy)?;
-        }
+    let exit = exec::run_cmd_interactive(&[
+        "guix",
+        "system",
+        "init",
+        "--fallback",
+        "/mnt/etc/system.scm",
+        "/mnt",
+    ])?;
+    if exit != 0 {
+        anyhow::bail!("guix system init failed with exit code {exit}");
     }
 
     ui.info("Installation complete! You can now reboot.");

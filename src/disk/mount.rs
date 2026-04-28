@@ -17,7 +17,11 @@ pub fn mount_actions(config: &SystemConfig) -> Vec<Action> {
     if config.firmware == Firmware::Efi {
         actions.push(Action::mkdir("/mnt/boot/efi"));
         let part1 = partition_path(&config.disk.dev_path, 1);
-        actions.push(Action::cmd(&["mount", &part1, "/mnt/boot/efi"]));
+        actions.push(Action::Mount {
+            source: PathBuf::from(&part1),
+            target: PathBuf::from("/mnt/boot/efi"),
+            fstype: "vfat".into(),
+        });
     }
 
     // Start cow-store overlay
@@ -95,7 +99,11 @@ mod tests {
         assert_eq!(actions[1], Action::mkdir("/mnt/boot/efi"));
         assert_eq!(
             actions[2],
-            Action::cmd(&["mount", "/dev/sda1", "/mnt/boot/efi"])
+            Action::Mount {
+                source: PathBuf::from("/dev/sda1"),
+                target: PathBuf::from("/mnt/boot/efi"),
+                fstype: "vfat".into(),
+            }
         );
         assert_eq!(
             actions[3],
@@ -120,7 +128,11 @@ mod tests {
         let actions = mount_actions(&config);
         assert_eq!(
             actions[2],
-            Action::cmd(&["mount", "/dev/nvme0n1p1", "/mnt/boot/efi"])
+            Action::Mount {
+                source: PathBuf::from("/dev/nvme0n1p1"),
+                target: PathBuf::from("/mnt/boot/efi"),
+                fstype: "vfat".into(),
+            }
         );
     }
 

@@ -7,10 +7,10 @@ use crate::ui::UserInterface;
 use crate::ui_or_back;
 
 const MODE_OPTIONS: &[&str] = &[
-    "Plain Guix (libre only)",
-    "Nonguix (nonfree drivers)",
-    "Panther (PantherX OS)",
-    "Enterprise (remote config)",
+    "guix: Libre only",
+    "nonguix: Nonfree kernels and applications (includes guix)",
+    "panther: Recommended for most users (includes guix, nonguix)",
+    "enterprise: From remote config",
 ];
 
 pub fn step_mode(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Result<StepResult> {
@@ -21,7 +21,7 @@ pub fn step_mode(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Resul
         InstallMode::Enterprise { .. } => 3,
     };
 
-    let choice = ui_or_back!(ui.select("Installation mode", MODE_OPTIONS, default));
+    let choice = ui_or_back!(ui.select("Installation channels", MODE_OPTIONS, default));
 
     config.mode = match choice {
         0 => InstallMode::Guix,

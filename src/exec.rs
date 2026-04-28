@@ -1,8 +1,19 @@
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::thread;
 
 use anyhow::{Context, Result, bail};
+
+/// Prevents orphaned children from surviving a killed installer (re-parented to init).
+fn apply_pdeathsig(cmd: &mut Command) {
+    unsafe {
+        cmd.pre_exec(|| {
+            rustix::process::set_parent_process_death_signal(Some(rustix::process::Signal::Term))
+                .map_err(std::io::Error::from)
+        });
+    }
+}
 
 /// Result of a command execution with captured output.
 #[derive(Debug)]
@@ -18,8 +29,10 @@ pub fn run_cmd(args: &[&str]) -> Result<CommandResult> {
         .split_first()
         .context("run_cmd called with empty args")?;
 
-    let output = Command::new(program)
-        .args(cmd_args)
+    let mut cmd = Command::new(program);
+    cmd.args(cmd_args);
+    apply_pdeathsig(&mut cmd);
+    let output = cmd
         .output()
         .with_context(|| format!("failed to execute: {}", args.join(" ")))?;
 
@@ -50,11 +63,13 @@ pub fn run_cmd_interactive(args: &[&str]) -> Result<i32> {
         .split_first()
         .context("run_cmd_interactive called with empty args")?;
 
-    let status = Command::new(program)
-        .args(cmd_args)
+    let mut cmd = Command::new(program);
+    cmd.args(cmd_args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    apply_pdeathsig(&mut cmd);
+    let status = cmd
         .status()
         .with_context(|| format!("failed to execute: {}", args.join(" ")))?;
 
@@ -70,11 +85,13 @@ pub fn run_cmd_with_stdin(args: &[&str], stdin_data: &str) -> Result<CommandResu
         .split_first()
         .context("run_cmd_with_stdin called with empty args")?;
 
-    let mut child = Command::new(program)
-        .args(cmd_args)
+    let mut cmd = Command::new(program);
+    cmd.args(cmd_args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_pdeathsig(&mut cmd);
+    let mut child = cmd
         .spawn()
         .with_context(|| format!("failed to execute: {}", args.join(" ")))?;
 
@@ -166,10 +183,12 @@ pub fn run_cmd_streaming(args: &[&str], on_line: &mut dyn FnMut(&str)) -> Result
         .split_first()
         .context("run_cmd_streaming called with empty args")?;
 
-    let mut child = Command::new(program)
-        .args(cmd_args)
+    let mut cmd = Command::new(program);
+    cmd.args(cmd_args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_pdeathsig(&mut cmd);
+    let mut child = cmd
         .spawn()
         .with_context(|| format!("failed to execute: {}", args.join(" ")))?;
 

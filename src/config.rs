@@ -23,6 +23,10 @@ pub struct SystemConfig {
     /// User password for chroot passwd after install. Not written to .scm.
     #[serde(skip)]
     pub password: Option<String>,
+    /// User-edited replacement for the rendered system.scm. When set, phase 5
+    /// writes this verbatim instead of rendering from the other config fields.
+    #[serde(default)]
+    pub system_scm_override: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,6 +144,7 @@ impl Default for SystemConfig {
             ssh_key: None,
             swap_size_mb: 4096,
             password: None,
+            system_scm_override: None,
         }
     }
 }
@@ -178,6 +183,40 @@ pub fn validate_username(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate an OpenSSH `authorized_keys`-style public key.
+///
+/// Decodes the base64 body and verifies its embedded length-prefixed algorithm
+/// name matches the line's prefix. That single check rejects empty input,
+/// pasted private keys, mangled paste, and prefix/body mismatches without
+/// hardcoding the set of valid algorithms.
+pub fn validate_ssh_public_key(key: &str) -> Result<(), String> {
+    use base64::Engine;
+
+    let line = key.trim();
+    let mut parts = line.split_whitespace();
+    let prefix = parts.next().ok_or("ssh key is empty")?;
+    let body_b64 = parts.next().ok_or("ssh key is missing the key body")?;
+
+    let blob = base64::engine::general_purpose::STANDARD
+        .decode(body_b64)
+        .map_err(|_| "ssh key body is not valid base64".to_string())?;
+
+    let len = blob
+        .get(0..4)
+        .and_then(|b| Some(u32::from_be_bytes(b.try_into().ok()?) as usize))
+        .ok_or("ssh key body is too short")?;
+    let inner = blob
+        .get(4..4 + len)
+        .ok_or("ssh key length prefix is invalid")?;
+
+    if inner != prefix.as_bytes() {
+        return Err(format!(
+            "ssh key prefix \"{prefix}\" does not match embedded algorithm name"
+        ));
+    }
+    Ok(())
+}
+
 pub fn validate_config_id(id: &str) -> Result<(), String> {
     if id.is_empty() {
         return Err("config ID must not be empty".into());
@@ -191,6 +230,66 @@ pub fn validate_config_id(id: &str) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+
+    fn make_key(prefix: &str, body: &[u8]) -> String {
+        let mut blob = Vec::new();
+        blob.extend(&(prefix.len() as u32).to_be_bytes());
+        blob.extend(prefix.as_bytes());
+        blob.extend(body);
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&blob);
+        format!("{prefix} {b64}")
+    }
+
+    #[test]
+    fn ssh_key_valid_ed25519() {
+        let key = make_key("ssh-ed25519", &[0u8; 32]);
+        assert!(validate_ssh_public_key(&key).is_ok());
+    }
+
+    #[test]
+    fn ssh_key_valid_with_comment() {
+        let key = format!("{} user@host", make_key("ssh-rsa", &[0u8; 256]));
+        assert!(validate_ssh_public_key(&key).is_ok());
+    }
+
+    #[test]
+    fn ssh_key_empty_rejected() {
+        assert!(validate_ssh_public_key("").is_err());
+        assert!(validate_ssh_public_key("   ").is_err());
+    }
+
+    #[test]
+    fn ssh_key_missing_body_rejected() {
+        assert!(validate_ssh_public_key("ssh-ed25519").is_err());
+    }
+
+    #[test]
+    fn ssh_key_bad_base64_rejected() {
+        assert!(validate_ssh_public_key("ssh-ed25519 not_valid_base64!!!").is_err());
+    }
+
+    #[test]
+    fn ssh_key_prefix_mismatch_rejected() {
+        let key = make_key("ssh-ed25519", &[0u8; 32]);
+        let tampered = key.replace("ssh-ed25519 ", "ssh-rsa ");
+        let err = validate_ssh_public_key(&tampered).unwrap_err();
+        assert!(err.contains("does not match"));
+    }
+
+    #[test]
+    fn ssh_key_truncated_blob_rejected() {
+        // Length prefix says 100 bytes but blob has only 4
+        let blob = (100u32).to_be_bytes();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(blob);
+        let key = format!("ssh-ed25519 {b64}");
+        assert!(validate_ssh_public_key(&key).is_err());
+    }
 }
 
 pub fn generate_hostname(mode: &InstallMode) -> String {

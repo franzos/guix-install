@@ -3,12 +3,14 @@ use clap::{Parser, Subcommand};
 
 use guix_install::config::{
     BlockDevice, DesktopEnvironment, EncryptionConfig, Filesystem, Firmware, SystemConfig,
-    UserAccount, generate_hostname, validate_config_id, validate_hostname, validate_username,
+    UserAccount, generate_hostname, validate_config_id, validate_hostname, validate_ssh_public_key,
+    validate_username,
 };
 use guix_install::disk::detect::{detect_block_devices, format_device};
 use guix_install::install;
 use guix_install::mode::InstallMode;
 use guix_install::repl::Repl;
+use guix_install::resume::InstallState;
 use guix_install::scheme::channels::render_channels;
 use guix_install::scheme::operating_system::render_operating_system;
 use guix_install::steps::StepResult;
@@ -167,6 +169,10 @@ fn build_config(cli: &Cli) -> Result<SystemConfig> {
 
     validate_username(&cli.username).map_err(|e| anyhow::anyhow!(e))?;
 
+    if let Some(key) = &cli.ssh_key {
+        validate_ssh_public_key(key).map_err(|e| anyhow::anyhow!(e))?;
+    }
+
     let filesystem = match cli.filesystem.as_str() {
         "btrfs" => Filesystem::Btrfs,
         _ => Filesystem::Ext4,
@@ -217,16 +223,54 @@ fn build_config(cli: &Cli) -> Result<SystemConfig> {
         ssh_key: cli.ssh_key.clone(),
         swap_size_mb: cli.swap,
         password: None,
+        system_scm_override: None,
     })
+}
+
+/// On startup, if a saved install state exists, ask the user whether to resume
+/// it or discard and start fresh. Returns `Some(config)` if resuming, `None` if
+/// starting fresh.
+fn handle_resume(ui: &mut Repl, state: InstallState) -> Result<Option<SystemConfig>> {
+    let last = state.completed_phases.last().copied().unwrap_or(0);
+    let mode = state.config.mode.label();
+    let disk = &state.config.disk.dev_path;
+
+    ui.info(&format!(
+        "Found incomplete installation: completed through phase {last}/8 \
+         (mode={mode}, disk={disk})."
+    ));
+
+    let options = &["Resume previous installation", "Discard and start fresh"];
+    let choice = ui.select("What next?", options, 0)?;
+    if choice != 0 {
+        InstallState::cleanup()?;
+        ui.info("Discarded previous state.");
+        return Ok(None);
+    }
+
+    let mut config = state.config;
+    if !state.completed_phases.contains(&8) {
+        let pw = ui.password("User password (re-enter to resume install)")?;
+        config.password = Some(pw);
+    }
+    Ok(Some(config))
 }
 
 fn run_interactive(dry_run: bool) -> Result<()> {
     let mut ui = Repl::new();
-    let mut config = SystemConfig::default();
-    let mut nav = StepNavigator::new(&config.mode);
 
     ui.info("guix-install — Guix System Installer");
     ui.info("");
+
+    if !dry_run
+        && let Some(state) = InstallState::load()?
+        && let Some(config) = handle_resume(&mut ui, state)?
+    {
+        return install::execute_installation(&config, &ui);
+    }
+
+    let mut config = SystemConfig::default();
+    let mut nav = StepNavigator::new(&config.mode);
 
     loop {
         let result = match nav.current() {
@@ -246,7 +290,7 @@ fn run_interactive(dry_run: bool) -> Result<()> {
             StepId::Encryption => step_encryption(&mut ui, &mut config)?,
             StepId::Users => step_users(&mut ui, &mut config)?,
             StepId::Desktop => step_desktop(&mut ui, &mut config)?,
-            StepId::Summary => step_summary(&mut ui, &config)?,
+            StepId::Summary => step_summary(&mut ui, &mut config)?,
         };
 
         match result {
