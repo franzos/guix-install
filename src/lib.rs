@@ -2,6 +2,7 @@ pub mod config;
 pub mod disk;
 pub mod enterprise;
 pub mod exec;
+pub mod hardware;
 pub mod install;
 pub mod mode;
 pub mod passwd;

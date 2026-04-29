@@ -74,10 +74,11 @@ fn panther_efi_plain_ext4_gnome() {
 
     let output = render_operating_system(&config);
     assert_scheme_structure(&output);
-    assert!(output.contains("(inherit %panther-desktop-os)"));
+    assert!(output.contains("(inherit %os-base)"));
     assert!(output.contains("grub-efi-bootloader"));
-    assert!(output.contains("(px system panther)"));
+    assert!(output.contains("(px system os)"));
     assert!(output.contains("gnome-desktop-service-type"));
+    assert!(output.contains("%os-desktop-services"));
     assert!(output.contains("\"ext4\""));
     assert!(output.contains("/boot/efi"));
     assert!(!output.contains("luks-device-mapping"));
@@ -99,7 +100,7 @@ fn panther_bios_luks_ext4_headless() {
 
     let output = render_operating_system(&config);
     assert_scheme_structure(&output);
-    assert!(output.contains("(inherit %panther-os)"));
+    assert!(output.contains("(inherit %os-base)"));
     assert!(output.contains("grub-bootloader"));
     assert!(output.contains("luks-device-mapping"));
     assert!(output.contains("/dev/mapper/cryptroot"));
@@ -127,7 +128,7 @@ fn nonguix_efi_plain_ext4_xfce() {
     assert!(output.contains("(nongnu system linux-initrd)"));
     assert!(output.contains("grub-efi-bootloader"));
     assert!(output.contains("xfce-desktop-service-type"));
-    assert!(output.contains("%base-services"));
+    assert!(output.contains("%desktop-services"));
     assert!(output.contains("%base-packages"));
     assert!(!output.contains("panther"));
 }
@@ -169,7 +170,7 @@ fn guix_efi_plain_ext4_gnome() {
     assert_scheme_structure(&output);
     assert!(output.contains("grub-efi-bootloader"));
     assert!(output.contains("gnome-desktop-service-type"));
-    assert!(output.contains("%base-services"));
+    assert!(output.contains("%desktop-services"));
     assert!(output.contains("%base-packages"));
     assert!(!output.contains("kernel linux"));
     assert!(!output.contains("microcode-initrd"));
@@ -403,7 +404,7 @@ fn panther_efi_luks_btrfs_gnome() {
     assert!(output.contains("\"btrfs\""));
     assert!(output.contains("luks-device-mapping"));
     assert!(output.contains("/boot/efi"));
-    assert!(output.contains("(inherit %panther-desktop-os)"));
+    assert!(output.contains("(inherit %os-base)"));
 }
 
 // --- EFI + LUKS ---

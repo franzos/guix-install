@@ -33,7 +33,7 @@ fn render_use_modules(config: &SystemConfig) -> String {
         InstallMode::Panther => {
             lines.push("(use-modules (gnu))".into());
             lines.push("(use-service-modules networking ssh desktop)".into());
-            lines.push("(use-modules (px system panther))".into());
+            lines.push("(use-modules (px system os))".into());
         }
         InstallMode::Enterprise { .. } => unreachable!(),
     }
@@ -100,13 +100,7 @@ fn render_os_form(config: &SystemConfig) -> String {
 
 fn render_inherit(config: &SystemConfig) -> Option<String> {
     match &config.mode {
-        InstallMode::Panther => {
-            if config.desktop.is_some() {
-                Some("(inherit %panther-desktop-os)".into())
-            } else {
-                Some("(inherit %panther-os)".into())
-            }
-        }
+        InstallMode::Panther => Some("(inherit %os-base)".into()),
         _ => None,
     }
 }
@@ -277,13 +271,11 @@ fn render_users(config: &SystemConfig) -> String {
 
 fn render_packages(config: &SystemConfig) -> String {
     match &config.mode {
-        InstallMode::Panther => {
-            if config.desktop.is_some() {
-                "  (packages %panther-desktop-packages)".into()
-            } else {
-                "  (packages %panther-base-packages)".into()
-            }
-        }
+        // (px system os) does not export a desktop-specific package list;
+        // %os-base-packages covers both. Hardware-token / blueman extras the
+        // old %panther-desktop-packages bundled can be re-added via Advanced
+        // > Edit system.scm.
+        InstallMode::Panther => "  (packages %os-base-packages)".into(),
         _ => "  (packages %base-packages)".into(),
     }
 }
@@ -296,13 +288,21 @@ fn render_services(config: &SystemConfig) -> String {
 }
 
 fn render_panther_services(config: &SystemConfig) -> String {
+    // %os-{base,desktop}-services from (px system os) — both wrap the stock
+    // Guix bundles with Panther's daemon config (channels + substitute keys).
+    // %os-desktop-services already pulls in NetworkManager via %desktop-services.
+    // Headless still needs an explicit DHCP client to satisfy
+    // openssh-service-type's `networking` requirement.
     let base = if config.desktop.is_some() {
-        "%panther-desktop-services"
+        "%os-desktop-services"
     } else {
-        "%panther-base-services"
+        "%os-base-services"
     };
 
     let mut service_list: Vec<String> = Vec::new();
+    if config.desktop.is_none() {
+        service_list.push("(service dhcpcd-service-type)".into());
+    }
     service_list.push("(service openssh-service-type)".into());
 
     if let Some(de) = &config.desktop {
@@ -328,6 +328,17 @@ fn render_panther_services(config: &SystemConfig) -> String {
 fn render_standard_services(config: &SystemConfig) -> String {
     let mut service_list: Vec<String> = Vec::new();
 
+    // openssh-service-type requires the `networking` shepherd dependency.
+    // `%desktop-services` bundles NetworkManager + wpa-supplicant + DBus etc.
+    // for desktops; `%base-services` does not, so we add `dhcpcd-service-type`
+    // for headless installs. Mirrors what the upstream Guix installer does.
+    let base = if config.desktop.is_some() {
+        "%desktop-services"
+    } else {
+        service_list.push("(service dhcpcd-service-type)".into());
+        "%base-services"
+    };
+
     if let Some(de) = &config.desktop {
         service_list.push(desktop_service(de));
     }
@@ -343,7 +354,7 @@ fn render_standard_services(config: &SystemConfig) -> String {
     format!(
         "  (services (append (list\n\
          {svcs})\n\
-         \x20                   %base-services))"
+         \x20                   {base}))"
     )
 }
 
