@@ -4,53 +4,45 @@
   <img src="assets/logo.svg" alt="guix-install" width="480">
 </p>
 <p align="center">
-  A mode-aware Guix System installer. Boot a Guix ISO, run one binary, end up with a working system — libre Guix, Nonguix with non-free firmware, PantherX, or an enterprise tarball you point it at.
+  Guix System installer. Boot a Guix ISO, run one binary, get a working system — libre Guix, Nonguix, PantherX, or an enterprise config from a server.
 </p>
 
 ## Why
 
-I've been running PantherX on a few machines and the existing Python installer (`px-install`) had grown awkward — partitioning logic tangled with config generation, no resume on failure, four modes glued on with conditionals. So I rewrote it in Rust, with the four installation modes as the central axis everything else fans out from.
-
-The thing is, "install Guix" means very different things depending on whether you want libre purity, working Wi-Fi, the Panther desktop, or a fleet config pulled from a server. This installer treats those as first-class instead of afterthoughts.
+The existing Python installer (`px-install`) had gotten hard to live with — partitioning tangled into config generation, no resume on failure, four modes bolted on with conditionals. Rewrote it in Rust with the install mode as the central axis.
 
 ## Status
 
-Pre-1.0. It runs end-to-end on the machines I've tested, but **read what it's about to do before letting it touch your disk**. `--dry-run` prints the generated `system.scm` (+ `channels.scm`) without partitioning anything. Do take this with a grain of salt — installers that nuke disks deserve scrutiny.
+Pre-1.0. Runs end-to-end on the machines I've tested. **Read what it's about to do before you let it touch your disk.** `--dry-run` prints the generated `system.scm` (+ `channels.scm`) without partitioning anything.
 
 ## Modes
 
 | Mode | Channels | Kernel | Notes |
 |------|----------|--------|-------|
-| `guix` | `%default-channels` | linux-libre | Runs a hardware preflight — warns about Wi-Fi/GPU/Ethernet that need non-free firmware. |
-| `nonguix` | + nonguix | linux + microcode | Substitute key for `substitutes.nonguix.org` is compiled in. |
-| `panther` *(default)* | + panther (pulls nonguix) | linux + microcode | Inherits `%os-base` from `(px system os)`. Substitute key for `substitutes.guix.gofranz.com` compiled in. |
-| `enterprise` | from remote | from remote | Fetches a tarball over HTTPS by config ID. Skips locale/timezone/hostname/users/desktop — those come from the tarball. |
+| `guix` | `%default-channels` | linux-libre | Hardware preflight warns about Wi-Fi/GPU/Ethernet needing non-free firmware. |
+| `nonguix` | + nonguix | linux + microcode | `substitutes.nonguix.org` key compiled in. |
+| `panther` *(default)* | + panther (pulls nonguix) | linux + microcode | Inherits `%os-base` from `(px system os)`. `substitutes.guix.gofranz.com` key compiled in. |
+| `enterprise` | from remote | from remote | Fetches a tarball over HTTPS by config ID. Skips locale/timezone/hostname/users/desktop. |
 
-## Install
-
-This is meant to be run from a Guix live ISO. Outside that, you can build it on any Guix system:
+## Build
 
 ```bash
 guix shell rust rust:cargo gcc-toolchain -- sh -c "CC=gcc cargo build --release"
-```
-
-There's a `manifest.scm` in the repo if you'd rather:
-
-```bash
+# or
 guix shell -m manifest.scm -- cargo build --release
 ```
 
 ## Usage
 
-Interactive — what you'd run from the ISO:
+From the ISO:
 
 ```bash
 sudo ./target/release/guix-install
 ```
 
-It walks you through Mode → Locale → Timezone → Hostname → Disk → Encryption → Users → Desktop → Summary. Escape goes back a step. Enterprise mode collapses the middle to just Disk + Encryption — the rest comes from the remote config.
+Walks through Mode → Locale → Timezone → Hostname → Disk → Encryption → Users → Desktop → Summary. Escape goes back a step. Enterprise mode collapses the middle to just Disk + Encryption.
 
-Non-interactive preview (no disk touched):
+Dry run (no disk touched):
 
 ```bash
 guix-install --dry-run --mode nonguix --hostname mybox --disk /dev/sda \
@@ -79,41 +71,41 @@ Subcommands:
 
 ```bash
 guix-install list-disks    # lsblk-style summary
-guix-install wifi          # connmanctl-driven WiFi setup, useful from ISO
+guix-install wifi          # connmanctl WiFi setup
 ```
 
-## What it does, step by step
+## Phases
 
-The install runs in **8 phases**, persisted to `/tmp/.guix-install-state` after each:
+8 phases, state persisted to `/tmp/.guix-install-state` after each:
 
-1. Partition (parted, BIOS or EFI auto-detected from `/sys/firmware/efi`)
+1. Partition (parted, BIOS/EFI auto-detected from `/sys/firmware/efi`)
 2. Format (ext4/btrfs, optional LUKS)
 3. Mount under `/mnt`
 4. Swap file
 5. Generate `system.scm` + `channels.scm` (or fetch enterprise tarball)
 6. Authorize substitute servers
 7. `guix pull` (skipped for plain Guix)
-8. `guix system init`, then set the user password
+8. `guix system init`, set user password
 
-If a phase fails or the box dies mid-install, re-running picks up where it left off — completed phases are skipped, only the failed one re-runs. If you change disk, mode, or firmware before resuming, the state is discarded and you start fresh.
+Re-running picks up at the failed phase. Change disk/mode/firmware and state is discarded.
 
-## Notes worth flagging
+## Notes
 
-- **Passwords never land in `system.scm`.** They're SHA-512-crypted in-process and atomically written to `/mnt/etc/shadow` (sibling-write + fsync + rename + dir fsync). Plaintext is held in `Zeroizing<String>` so it's wiped on drop. No `chroot`/`chpasswd` subprocess.
-- **Substitute keys are compiled in** via `include_str!` — not fetched at install time.
-- **Enterprise tarballs are streamed** through `ureq → flate2 → tar`. No intermediate file on disk.
-- **Disk partition naming** handles NVMe/MMC `p` separators (`/dev/nvme0n1p1`) vs SATA (`/dev/sda1`) automatically.
-- **UI is a trait** (`UserInterface`). The current REPL impl uses `dialoguer`; a TUI/GUI could plug in without touching step logic.
+- **Passwords never land in `system.scm`.** SHA-512-crypted in-process, atomically written to `/mnt/etc/shadow` (sibling-write + fsync + rename + dir fsync). Plaintext held in `Zeroizing<String>`. No `chroot`/`chpasswd`.
+- **Substitute keys compiled in** via `include_str!`.
+- **Enterprise tarballs streamed** through `ureq → flate2 → tar`. No intermediate file.
+- **Partition naming** handles NVMe/MMC (`/dev/nvme0n1p1`) vs SATA (`/dev/sda1`) via `disk::partition_path`.
+- **UI is a trait** (`UserInterface`). REPL uses `dialoguer`; TUI/GUI plug in without touching step logic.
 
 ## Development
 
-Tests, including golden tests for the 2×2×2×4 scheme matrix (firmware × encryption × filesystem × mode):
+Tests (golden tests cover the 2×2×2×4 scheme matrix: firmware × encryption × filesystem × mode):
 
 ```bash
 guix shell rust rust:cargo gcc-toolchain -- sh -c "CC=gcc cargo test"
 ```
 
-There's also a tier-2 validation that pipes each rendered `system.scm` through `guix time-machine ... system build -d` to catch drift in the modules and records we depend on. It's `#[ignore]`d by default because it's slow on the first run:
+Tier-2 validation pipes each rendered `system.scm` through `guix time-machine ... system build -d`. `#[ignore]`d by default — first run is slow:
 
 ```bash
 guix shell guix -- cargo test --test scheme_validate -- --ignored
@@ -126,4 +118,4 @@ podman run --rm -v $PWD:/work -w /work rust:latest \
   sh -c "rustup component add rustfmt && cargo fmt"
 ```
 
-`PLAN.md` and `RESEARCH.md` capture the original design intent and the upstream Guix/Nonguix/Panther references I worked from. They're useful when scoping bigger changes, but the code is the source of truth.
+`PLAN.md` and `RESEARCH.md` have the original design intent and upstream references. Code is the source of truth.
