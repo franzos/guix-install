@@ -12,7 +12,7 @@ use crate::ui::UserInterface;
 use crate::{disk, exec, scheme};
 
 const NONGUIX_KEY: &str = include_str!("../keys/substitutes.nonguix.org.pub");
-const PANTHERX_KEY: &str = include_str!("../keys/packages.pantherx.org.pub");
+const GOFRANZ_KEY: &str = include_str!("../keys/substitutes.guix.gofranz.com.pub");
 
 /// Checks network connectivity before starting installation.
 ///
@@ -188,11 +188,11 @@ fn phase_authorize(config: &SystemConfig, ui: &dyn UserInterface) -> Result<()> 
         }
         InstallMode::Panther => {
             authorize_substitute("substitutes.nonguix.org", NONGUIX_KEY, ui)?;
-            authorize_substitute("packages.pantherx.org", PANTHERX_KEY, ui)?;
+            authorize_substitute("substitutes.guix.gofranz.com", GOFRANZ_KEY, ui)?;
         }
         InstallMode::Enterprise { .. } => {
             authorize_substitute("substitutes.nonguix.org", NONGUIX_KEY, ui)?;
-            authorize_substitute("packages.pantherx.org", PANTHERX_KEY, ui)?;
+            authorize_substitute("substitutes.guix.gofranz.com", GOFRANZ_KEY, ui)?;
         }
     }
     Ok(())
@@ -286,9 +286,9 @@ mod tests {
     }
 
     #[test]
-    fn pantherx_key_is_valid() {
-        assert!(PANTHERX_KEY.contains("public-key"));
-        assert!(PANTHERX_KEY.contains("Ed25519"));
+    fn gofranz_key_is_valid() {
+        assert!(GOFRANZ_KEY.contains("public-key"));
+        assert!(GOFRANZ_KEY.contains("Ed25519"));
     }
 
     #[test]

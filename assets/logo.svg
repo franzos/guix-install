@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 120" fill="none">
+  <defs>
+    <linearGradient id="disk-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="boot-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="root-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="swap-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#6ee7b7"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(16, 10)">
+    <!-- mode dots: guix / nonguix / panther / enterprise -->
+    <circle cx="22" cy="14" r="4" fill="#fbbf24"/>
+    <circle cx="36" cy="14" r="4" fill="#60a5fa"/>
+    <circle cx="50" cy="14" r="4" fill="#a78bfa"/>
+    <circle cx="64" cy="14" r="4" fill="#6ee7b7"/>
+
+    <!-- install arrow -->
+    <path d="M50 26 V42 M42 36 L50 44 L58 36"
+          stroke="url(#disk-grad)" stroke-width="3"
+          stroke-linecap="round" stroke-linejoin="round"
+          fill="none" opacity="0.85"/>
+
+    <!-- disk outline -->
+    <rect x="14" y="50" width="72" height="52" rx="6"
+          stroke="url(#disk-grad)" stroke-width="2.5" fill="none" opacity="0.9"/>
+
+    <!-- partitions inside -->
+    <rect x="20" y="56" width="60" height="8" rx="2" fill="url(#boot-grad)" opacity="0.85"/>
+    <rect x="20" y="68" width="60" height="18" rx="2" fill="url(#root-grad)" opacity="0.85"/>
+    <rect x="20" y="90" width="60" height="6" rx="2" fill="url(#swap-grad)" opacity="0.85"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="120" y="72" font-family="ui-monospace, 'Cascadia Code', 'Fira Code', monospace"
+        font-size="50" font-weight="700" fill="#e2e8f0" letter-spacing="-1.5">guix-install</text>
+
+  <!-- tagline -->
+  <text x="122" y="94" font-family="system-ui, -apple-system, sans-serif"
+        font-size="14" fill="#94a3b8">a mode-aware Guix System installer</text>
+</svg>
