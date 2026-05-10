@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.2] - 2026-05-10
+
+### Added
+- GitHub Actions workflow that builds a static `x86_64-unknown-linux-musl` binary on push, PR, and tag, and attaches it to a GitHub release on `v*` tags.
+- README screenshot of the installation summary, plus a fresh terminal-motif logo.
+
+### Changed
+- README Usage now distinguishes the PantherX ISO (binary pre-installed) from plain Guix (download the static binary from a release).
+- README documents `--username` and `--keyboard` flags that were missing from the table.
+
 ## [0.1.1] - 2026-05-10
 
 ### Fixed
