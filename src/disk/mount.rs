@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::config::{Firmware, SystemConfig};
+use crate::config::{Filesystem, Firmware, SystemConfig};
 use crate::disk::{Action, partition_path};
 
 /// Builds the mount action sequence for the target system.
@@ -35,19 +35,40 @@ pub fn mount_actions(config: &SystemConfig) -> Vec<Action> {
 
 /// Builds the swap file creation actions.
 ///
-/// Creates a fully-allocated swap file at `/mnt/swapfile` of the configured
-/// size (zero-filled, 0600), then runs `mkswap` and `swapon`.
+/// On ext4, creates a zero-filled file then runs `mkswap` + `swapon`.
+/// On btrfs, swap files require NOCOW and contiguous extents, so we use
+/// `btrfs filesystem mkswapfile -s <size>` which handles NOCOW + format
+/// in one shot, then `swapon`.
 pub fn swap_actions(config: &SystemConfig) -> Vec<Action> {
     let path = PathBuf::from("/mnt/swapfile");
-    let size_bytes = (config.swap_size_mb as u64) * 1024 * 1024;
-    vec![
-        Action::CreateSwapFile {
-            path: path.clone(),
-            size_bytes,
-        },
-        Action::cmd(&["mkswap", "/mnt/swapfile"]),
-        Action::cmd(&["swapon", "/mnt/swapfile"]),
-    ]
+
+    match config.filesystem {
+        Filesystem::Ext4 => {
+            let size_bytes = (config.swap_size_mb as u64) * 1024 * 1024;
+            vec![
+                Action::CreateSwapFile {
+                    path: path.clone(),
+                    size_bytes,
+                },
+                Action::cmd(&["mkswap", "/mnt/swapfile"]),
+                Action::cmd(&["swapon", "/mnt/swapfile"]),
+            ]
+        }
+        Filesystem::Btrfs => {
+            let size = format!("{}m", config.swap_size_mb);
+            vec![
+                Action::cmd(&[
+                    "btrfs",
+                    "filesystem",
+                    "mkswapfile",
+                    "-s",
+                    &size,
+                    "/mnt/swapfile",
+                ]),
+                Action::cmd(&["swapon", "/mnt/swapfile"]),
+            ]
+        }
+    }
 }
 
 #[cfg(test)]
@@ -153,6 +174,28 @@ mod tests {
         );
         assert_eq!(actions[1], Action::cmd(&["mkswap", "/mnt/swapfile"]));
         assert_eq!(actions[2], Action::cmd(&["swapon", "/mnt/swapfile"]));
+    }
+
+    #[test]
+    fn swap_btrfs_uses_mkswapfile() {
+        let mut config = test_config();
+        config.filesystem = Filesystem::Btrfs;
+        config.swap_size_mb = 4096;
+
+        let actions = swap_actions(&config);
+        assert_eq!(actions.len(), 2);
+        assert_eq!(
+            actions[0],
+            Action::cmd(&[
+                "btrfs",
+                "filesystem",
+                "mkswapfile",
+                "-s",
+                "4096m",
+                "/mnt/swapfile",
+            ])
+        );
+        assert_eq!(actions[1], Action::cmd(&["swapon", "/mnt/swapfile"]));
     }
 
     #[test]

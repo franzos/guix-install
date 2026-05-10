@@ -3,6 +3,7 @@ use console::Style;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Input, Password, Select};
 
+use crate::installer_log;
 use crate::ui::{UserCancelled, UserInterface};
 
 #[derive(Default)]
@@ -66,16 +67,19 @@ impl UserInterface for Repl {
 
     fn info(&self, msg: &str) {
         println!("{msg}");
+        installer_log::write_line("info:", msg);
     }
 
     fn warn(&self, msg: &str) {
         let style = Style::new().yellow();
         eprintln!("{}", style.apply_to(format!("warning: {msg}")));
+        installer_log::write_line("warn:", msg);
     }
 
     fn error(&self, msg: &str) {
         let style = Style::new().red().bold();
         eprintln!("{}", style.apply_to(format!("error: {msg}")));
+        installer_log::write_line("error:", msg);
     }
 
     fn progress(&self, msg: &str, pct: Option<f32>) {

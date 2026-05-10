@@ -1,6 +1,6 @@
 [package]
 name = "guix-install"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
@@ -16,7 +16,7 @@ tar = "0.4"
 flate2 = "1"
 pwhash = "1"
 zeroize = "1"
-rustix = { version = "0.38", features = ["mount", "process"] }
+rustix = { version = "0.38", features = ["mount", "process", "thread"] }
 base64 = "0.22"
 
 [dev-dependencies]

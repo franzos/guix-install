@@ -5,6 +5,8 @@ use std::thread;
 
 use anyhow::{Context, Result, bail};
 
+use crate::installer_log;
+
 /// Prevents orphaned children from surviving a killed installer (re-parented to init).
 fn apply_pdeathsig(cmd: &mut Command) {
     unsafe {
@@ -29,6 +31,8 @@ pub fn run_cmd(args: &[&str]) -> Result<CommandResult> {
         .split_first()
         .context("run_cmd called with empty args")?;
 
+    installer_log::write_line("exec:", &args.join(" "));
+
     let mut cmd = Command::new(program);
     cmd.args(cmd_args);
     apply_pdeathsig(&mut cmd);
@@ -43,6 +47,15 @@ pub fn run_cmd(args: &[&str]) -> Result<CommandResult> {
     };
 
     if !output.status.success() {
+        installer_log::write_line(
+            "exec-fail:",
+            &format!(
+                "exit {} {} -- stderr: {}",
+                result.exit_code,
+                args.join(" "),
+                result.stderr.trim()
+            ),
+        );
         bail!(
             "command failed (exit {}): {}\nstderr: {}",
             result.exit_code,
@@ -63,6 +76,8 @@ pub fn run_cmd_interactive(args: &[&str]) -> Result<i32> {
         .split_first()
         .context("run_cmd_interactive called with empty args")?;
 
+    installer_log::write_line("exec-tty:", &args.join(" "));
+
     let mut cmd = Command::new(program);
     cmd.args(cmd_args)
         .stdin(Stdio::inherit())
@@ -73,17 +88,26 @@ pub fn run_cmd_interactive(args: &[&str]) -> Result<i32> {
         .status()
         .with_context(|| format!("failed to execute: {}", args.join(" ")))?;
 
-    Ok(status.code().unwrap_or(-1))
+    let code = status.code().unwrap_or(-1);
+    installer_log::write_line("exec-tty-exit:", &format!("{} -> {}", args.join(" "), code));
+    Ok(code)
 }
 
 /// Runs a command with data piped to stdin.
 ///
 /// Useful for commands like `guix archive --authorize` that read a key from stdin,
 /// or `chpasswd` that reads `user:password` from stdin.
+///
+/// **Secrets contract:** the full argv is logged via `installer_log`, so any
+/// caller passing a secret (key, password, token) MUST place it in
+/// `stdin_data`, never in `args`. The argv flows through process listings,
+/// audit logs, and the on-disk installer log.
 pub fn run_cmd_with_stdin(args: &[&str], stdin_data: &str) -> Result<CommandResult> {
     let (program, cmd_args) = args
         .split_first()
         .context("run_cmd_with_stdin called with empty args")?;
+
+    installer_log::write_line("exec-stdin:", &args.join(" "));
 
     let mut cmd = Command::new(program);
     cmd.args(cmd_args)
@@ -112,6 +136,15 @@ pub fn run_cmd_with_stdin(args: &[&str], stdin_data: &str) -> Result<CommandResu
     };
 
     if result.exit_code != 0 {
+        installer_log::write_line(
+            "exec-fail:",
+            &format!(
+                "exit {} {} -- stderr: {}",
+                result.exit_code,
+                args.join(" "),
+                result.stderr.trim()
+            ),
+        );
         bail!(
             "command failed (exit {}): {}\nstderr: {}",
             result.exit_code,
