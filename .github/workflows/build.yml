@@ -1,0 +1,51 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  build:
+    name: build (x86_64 musl)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --release --locked --target x86_64-unknown-linux-musl
+
+      - name: Build (static musl)
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl
+
+      - name: Strip and verify static
+        run: |
+          strip target/x86_64-unknown-linux-musl/release/guix-install
+          file target/x86_64-unknown-linux-musl/release/guix-install
+          cp target/x86_64-unknown-linux-musl/release/guix-install guix-install-x86_64-linux-musl
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          name: guix-install-x86_64-linux-musl
+          path: guix-install-x86_64-linux-musl
+          retention-days: 30
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: guix-install-x86_64-linux-musl
+          generate_release_notes: true
+          fail_on_unmatched_files: true

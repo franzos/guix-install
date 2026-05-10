@@ -15,6 +15,8 @@ The existing Python installer ([`px-install`](https://github.com/franzos/px-inst
 
 Pre-1.0. Runs end-to-end on the machines I've tested. **Read what it's about to do before you let it touch your disk.** `--dry-run` prints the generated `system.scm` (+ `channels.scm`) without partitioning anything.
 
+Prebuilt **static x86_64 binaries** (musl, no runtime deps) are attached to each [GitHub release](https://github.com/franzos/guix-install/releases) so you can use this on a plain Guix ISO without building anything.
+
 ## Modes
 
 | Mode | Channels | Kernel | Notes |
@@ -34,10 +36,19 @@ guix shell -m manifest.scm -- cargo build --release
 
 ## Usage
 
-From the ISO:
+On the **PantherX ISO** the binary is pre-installed — just run:
 
 ```bash
-sudo ./target/release/guix-install
+sudo guix-install
+```
+
+On a **plain Guix ISO** (or anywhere else), grab the static musl binary from a release:
+
+```bash
+curl -L -o guix-install \
+  https://github.com/franzos/guix-install/releases/latest/download/guix-install-x86_64-linux-musl
+chmod +x guix-install
+sudo ./guix-install
 ```
 
 Walks through Mode → Locale → Timezone → Hostname → Disk → Encryption → Users → Desktop → Summary. Escape goes back a step. Enterprise mode collapses the middle to just Disk + Encryption.
