@@ -19,12 +19,12 @@ Prebuilt **static x86_64 binaries** (musl, no runtime deps) are attached to each
 
 ## Modes
 
-| Mode | Channels | Kernel | Notes |
-|------|----------|--------|-------|
-| `guix` | `%default-channels` | linux-libre | Hardware preflight warns about Wi-Fi/GPU/Ethernet needing non-free firmware. |
-| `nonguix` | + nonguix | linux + microcode | `substitutes.nonguix.org` key compiled in. |
-| `panther` *(default)* | + panther (pulls nonguix) | linux + microcode | Inherits `%os-base` from `(px system os)`. `substitutes.guix.gofranz.com` key compiled in. |
-| `enterprise` | from remote | from remote | Fetches a tarball over HTTPS by config ID. Skips locale/timezone/hostname/users/desktop. |
+| Channel | Kernel | Notes |
+|---------|--------|-------|
+| [`guix`](https://codeberg.org/guix/guix) | linux-libre | Hardware preflight warns about Wi-Fi/GPU/Ethernet needing non-free firmware. |
+| [`nonguix`](https://gitlab.com/nonguix/nonguix) | linux + microcode | `substitutes.nonguix.org` key compiled in. |
+| [`panther`](https://codeberg.org/gofranz/panther) *(default)* | linux + microcode | Pulls nonguix transitively. Inherits `%os-base` from `(px system os)`. `substitutes.guix.gofranz.com` key compiled in. |
+| `enterprise` | from remote | Fetches a tarball over HTTPS by config ID. Skips locale/timezone/hostname/users/desktop. |
 
 ## Build
 
@@ -39,8 +39,16 @@ guix shell -m manifest.scm -- cargo build --release
 On the **PantherX ISO** the binary is pre-installed — just run:
 
 ```bash
-sudo guix-install
+guix-install
 ```
+
+Latest PantherX ISO (2.2 GB, BIOS + UEFI, x86_64):
+
+```
+https://s3.eu-central-1.amazonaws.com/temp.pantherx.org/1xnvrrk5n25llks8pjx64f2kb3nfasn4-image.iso
+```
+
+Hash (Guix nix-base32, SHA-256): `0vvnfzw6y52z1qd2k60jcxw9r5y9mfvp9s1p4nj53ii4l3gyhbmg`
 
 On a **plain Guix ISO** (or anywhere else), grab the static musl binary from a release:
 
@@ -48,7 +56,7 @@ On a **plain Guix ISO** (or anywhere else), grab the static musl binary from a r
 curl -L -o guix-install \
   https://github.com/franzos/guix-install/releases/latest/download/guix-install-x86_64-linux-musl
 chmod +x guix-install
-sudo ./guix-install
+./guix-install
 ```
 
 Walks through Mode → Locale → Timezone → Hostname → Disk → Encryption → Users → Desktop → Summary. Escape goes back a step. Enterprise mode collapses the middle to just Disk + Encryption.
