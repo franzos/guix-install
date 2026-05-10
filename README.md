@@ -42,6 +42,10 @@ sudo ./target/release/guix-install
 
 Walks through Mode → Locale → Timezone → Hostname → Disk → Encryption → Users → Desktop → Summary. Escape goes back a step. Enterprise mode collapses the middle to just Disk + Encryption.
 
+<p align="center">
+  <img src="assets/installer-summary.png" alt="Installation summary screen" width="720">
+</p>
+
 Dry run (no disk touched):
 
 ```bash
