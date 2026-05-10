@@ -9,7 +9,7 @@
 
 ## Why
 
-The existing Python installer (`px-install`) had gotten hard to live with — partitioning tangled into config generation, no resume on failure, four modes bolted on with conditionals. Rewrote it in Rust with the install mode as the central axis.
+The existing Python installer ([`px-install`](https://github.com/franzos/px-install)) had gotten hard to live with — partitioning tangled into config generation, no resume on failure, four modes bolted on with conditionals. Rewrote it in Rust with the install mode as the central axis.
 
 ## Status
 
@@ -60,6 +60,8 @@ Common flags:
 | `--disk` | `/dev/sda` | |
 | `--filesystem` | `ext4` | or `btrfs` |
 | `--encrypt` | off | LUKS on `/` |
+| `--username` | `panther` | login name for the primary user |
+| `--keyboard` | none | layout, e.g. `us`, `de` |
 | `--desktop` | none | `gnome`, `kde`, `xfce`, `mate`, `sway`, `i3`, `lxqt` |
 | `--swap` | `4096` MB | swap file size |
 | `--ssh-key` | none | dropped into the user's `authorized_keys` |
@@ -99,16 +101,24 @@ Re-running picks up at the failed phase. Change disk/mode/firmware and state is 
 
 ## Development
 
-Tests (golden tests cover the 2×2×2×4 scheme matrix: firmware × encryption × filesystem × mode):
+Three layers of testing, in order of how often I run them.
+
+**1. Unit + golden tests.** Pure-Rust assertions on the action sequences and the rendered scheme. Covers the 2×2×2×4 matrix (firmware × encryption × filesystem × mode). Fast.
 
 ```bash
 guix shell rust rust:cargo gcc-toolchain -- sh -c "CC=gcc cargo test"
 ```
 
-Tier-2 validation pipes each rendered `system.scm` through `guix time-machine ... system build -d`. `#[ignore]`d by default — first run is slow:
+**2. Scheme validation.** Pipes each generated `system.scm` through `guix time-machine ... system build -d` to confirm Guix actually accepts it. `#[ignore]`d by default — first run is slow.
 
 ```bash
 guix shell guix -- cargo test --test scheme_validate -- --ignored
+```
+
+**3. Guided VM install** *(Claude Code)*. The `/guix-install-test` skill drives a QEMU VM end-to-end: builds the binary, boots a Guix ISO, copies the binary in over SSH, and walks through real install scenarios (mode × filesystem × encryption × firmware) with reboots between cycles. Use it when changing partition / format / mount / cow-store / pull / system-init paths.
+
+```
+/guix-install-test
 ```
 
 Format:
@@ -117,5 +127,3 @@ Format:
 podman run --rm -v $PWD:/work -w /work rust:latest \
   sh -c "rustup component add rustfmt && cargo fmt"
 ```
-
-`PLAN.md` and `RESEARCH.md` have the original design intent and upstream references. Code is the source of truth.
