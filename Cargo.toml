@@ -2,6 +2,9 @@
 name = "guix-install"
 version = "0.1.2"
 edition = "2024"
+authors = ["Franz Geffke <mail@gofranz.com>"]
+license = "GPL-3.0-only"
+description = "Interactive Rust installer for Guix System (Guix, Nonguix, Panther, and Enterprise modes)"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
