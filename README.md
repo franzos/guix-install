@@ -45,7 +45,7 @@ guix-install
 Latest PantherX ISO (2.2 GB, BIOS + UEFI, x86_64):
 
 ```
-https://s3.eu-central-1.amazonaws.com/temp.pantherx.org/1xnvrrk5n25llks8pjx64f2kb3nfasn4-image.iso
+https://temp.pantherx.org/1xnvrrk5n25llks8pjx64f2kb3nfasn4-image.iso
 ```
 
 Hash (Guix nix-base32, SHA-256): `0vvnfzw6y52z1qd2k60jcxw9r5y9mfvp9s1p4nj53ii4l3gyhbmg`
