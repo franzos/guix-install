@@ -3,20 +3,40 @@ use crate::disk::partition_path;
 
 /// Builds cryptsetup commands for LUKS encryption on partition 2.
 ///
+/// Both read the passphrase from stdin (`--key-file -`), never from argv, so
+/// the secret stays out of process listings and the installer log. The caller
+/// (phase 2) feeds it via `run_cmd_with_stdin`.
+///
 /// Returns two commands:
-/// 1. `cryptsetup luksFormat <partition>` (run interactively for passphrase)
-/// 2. `cryptsetup open --type luks <partition> <target>` (also interactive)
+/// 1. `cryptsetup luksFormat --batch-mode --key-file - <partition>`
+/// 2. `cryptsetup open --type luks --key-file - <partition> <target>`
 pub fn encryption_commands(device: &str, target: &str) -> Vec<Vec<String>> {
     let part2 = partition_path(device, 2);
     vec![
-        vec!["cryptsetup", "luksFormat", &part2]
-            .into_iter()
-            .map(String::from)
-            .collect(),
-        vec!["cryptsetup", "open", "--type", "luks", &part2, target]
-            .into_iter()
-            .map(String::from)
-            .collect(),
+        vec![
+            "cryptsetup",
+            "luksFormat",
+            "--batch-mode",
+            "--key-file",
+            "-",
+            &part2,
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect(),
+        vec![
+            "cryptsetup",
+            "open",
+            "--type",
+            "luks",
+            "--key-file",
+            "-",
+            &part2,
+            target,
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect(),
     ]
 }
 
@@ -119,7 +139,17 @@ mod tests {
     fn encryption_sata() {
         let cmds = encryption_commands("/dev/sda", "cryptroot");
         assert_eq!(cmds.len(), 2);
-        assert_eq!(cmds[0], vec!["cryptsetup", "luksFormat", "/dev/sda2"]);
+        assert_eq!(
+            cmds[0],
+            vec![
+                "cryptsetup",
+                "luksFormat",
+                "--batch-mode",
+                "--key-file",
+                "-",
+                "/dev/sda2"
+            ]
+        );
         assert_eq!(
             cmds[1],
             vec![
@@ -127,17 +157,25 @@ mod tests {
                 "open",
                 "--type",
                 "luks",
+                "--key-file",
+                "-",
                 "/dev/sda2",
                 "cryptroot"
             ]
         );
+        // Passphrase must never appear in argv — it is fed via stdin.
+        for cmd in &cmds {
+            assert!(!cmd.iter().any(|a| a == "cryptroot-passphrase"));
+        }
     }
 
     #[test]
     fn encryption_nvme() {
         let cmds = encryption_commands("/dev/nvme0n1", "cryptroot");
-        assert_eq!(cmds[0][2], "/dev/nvme0n1p2");
-        assert_eq!(cmds[1][4], "/dev/nvme0n1p2");
+        // luksFormat: cryptsetup luksFormat --batch-mode --key-file - <part>
+        assert_eq!(cmds[0].last().unwrap(), "/dev/nvme0n1p2");
+        // open: cryptsetup open --type luks --key-file - <part> <target>
+        assert_eq!(cmds[1][cmds[1].len() - 2], "/dev/nvme0n1p2");
     }
 
     // --- format_root_commands ---
@@ -166,6 +204,7 @@ mod tests {
         config.filesystem = Filesystem::Ext4;
         config.encryption = Some(EncryptionConfig {
             device_target: "cryptroot".into(),
+            passphrase: None,
         });
 
         let cmds = format_root_commands(&config);
@@ -205,6 +244,7 @@ mod tests {
         config.filesystem = Filesystem::Btrfs;
         config.encryption = Some(EncryptionConfig {
             device_target: "cryptroot".into(),
+            passphrase: None,
         });
 
         let cmds = format_root_commands(&config);
@@ -239,6 +279,7 @@ mod tests {
         config.filesystem = Filesystem::Ext4;
         config.encryption = Some(EncryptionConfig {
             device_target: "cryptroot".into(),
+            passphrase: None,
         });
 
         let cmds = format_commands(&config);

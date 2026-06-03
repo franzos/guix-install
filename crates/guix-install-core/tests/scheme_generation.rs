@@ -1,10 +1,10 @@
-use guix_install::config::{
+use guix_install_core::config::{
     BlockDevice, DesktopEnvironment, EncryptionConfig, Filesystem, Firmware, SystemConfig,
     UserAccount, generate_hostname, validate_config_id, validate_hostname, validate_username,
 };
-use guix_install::mode::InstallMode;
-use guix_install::scheme::channels::render_channels;
-use guix_install::scheme::operating_system::render_operating_system;
+use guix_install_core::mode::InstallMode;
+use guix_install_core::scheme::channels::render_channels;
+use guix_install_core::scheme::operating_system::render_operating_system;
 
 fn test_disk() -> BlockDevice {
     BlockDevice {
@@ -95,6 +95,7 @@ fn panther_bios_luks_ext4_headless() {
     config.filesystem = Filesystem::Ext4;
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     config.desktop = None;
 
@@ -143,6 +144,7 @@ fn nonguix_bios_luks_btrfs_headless() {
     config.filesystem = Filesystem::Btrfs;
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     config.desktop = None;
 
@@ -189,6 +191,7 @@ fn guix_bios_luks_ext4_headless() {
     config.filesystem = Filesystem::Ext4;
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     config.desktop = None;
 
@@ -329,6 +332,7 @@ fn nvme_disk_luks_source() {
     };
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
 
     let output = render_operating_system(&config);
@@ -396,6 +400,7 @@ fn panther_efi_luks_btrfs_gnome() {
     config.filesystem = Filesystem::Btrfs;
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     config.desktop = Some(DesktopEnvironment::Gnome);
 
@@ -417,6 +422,7 @@ fn nonguix_efi_luks_ext4_gnome() {
     config.filesystem = Filesystem::Ext4;
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     config.desktop = Some(DesktopEnvironment::Gnome);
 
@@ -480,6 +486,7 @@ fn luks_uuid_rendered() {
     config.firmware = Firmware::Bios;
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     config.disk.root_partition_uuid = Some("12345678-abcd-ef01-2345-6789abcdef01".into());
 

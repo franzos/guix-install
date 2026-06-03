@@ -1,8 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::config::{Firmware, SystemConfig, validate_ssh_public_key};
 use crate::disk::format_size;
-use crate::exec;
 use crate::mode::InstallMode;
 use crate::scheme;
 use crate::steps::StepResult;
@@ -13,8 +12,6 @@ const MAIN_OPTIONS: &[&str] = &[
     "Proceed with installation",
     "Cancel installation",
 ];
-
-const EDIT_PATH: &str = "/tmp/guix-install-edit.scm";
 
 pub fn step_summary(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Result<StepResult> {
     loop {
@@ -199,15 +196,10 @@ fn edit_system_scm(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Res
         .clone()
         .unwrap_or_else(|| scheme::operating_system::render_operating_system(config));
 
-    std::fs::write(EDIT_PATH, &initial).with_context(|| format!("write {EDIT_PATH}"))?;
-
-    if !launch_editor(ui, EDIT_PATH) {
-        let _ = std::fs::remove_file(EDIT_PATH);
-        return Ok(());
-    }
-
-    let edited = std::fs::read_to_string(EDIT_PATH).with_context(|| format!("read {EDIT_PATH}"))?;
-    let _ = std::fs::remove_file(EDIT_PATH);
+    let edited = match ui.edit_text("Edit system.scm", &initial)? {
+        Some(edited) => edited,
+        None => return Ok(()),
+    };
 
     if edited == initial && config.system_scm_override.is_none() {
         ui.info("No changes — discarding.");
@@ -221,25 +213,4 @@ fn edit_system_scm(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Res
 fn discard_override(ui: &dyn UserInterface, config: &mut SystemConfig) {
     config.system_scm_override = None;
     ui.info("Custom system.scm discarded — installer will render fresh from config.");
-}
-
-/// Launches an editor on `path`. Returns true on a successful spawn (regardless
-/// of editor exit code), false if no editor could be spawned.
-fn launch_editor(ui: &dyn UserInterface, path: &str) -> bool {
-    let mut candidates: Vec<String> = Vec::new();
-    candidates.extend(std::env::var("EDITOR").ok());
-    candidates.extend(std::env::var("VISUAL").ok());
-    candidates.push("nano".into());
-    candidates.push("vi".into());
-
-    for editor in &candidates {
-        ui.info(&format!("Opening {path} in {editor}..."));
-        if exec::run_cmd_interactive(&[editor, path]).is_ok() {
-            return true;
-        }
-    }
-    ui.error(&format!(
-        "No editor available (set $EDITOR or install nano/vi). Edit {path} manually."
-    ));
-    false
 }

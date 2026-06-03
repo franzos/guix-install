@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use zeroize::Zeroizing;
 
 use crate::config::SystemConfig;
 use crate::enterprise;
 use crate::installer_log;
 use crate::mode::InstallMode;
 use crate::passwd;
+use crate::progress::{self, Phase};
 use crate::resume::InstallState;
 use crate::ui::UserInterface;
 use crate::{disk, exec, scheme};
@@ -17,6 +17,27 @@ const GOFRANZ_KEY: &str = include_str!("../keys/substitutes.guix.gofranz.com.pub
 
 const TARGET_DIR: &str = "/mnt";
 const LOG_PATH: &str = "/mnt/var/log/guix-install.log";
+
+/// Default guix substitute server, always kept first.
+const GUIX_CI_URL: &str = "https://ci.guix.gnu.org";
+const NONGUIX_URL: &str = "https://substitutes.nonguix.org";
+const GOFRANZ_URL: &str = "https://substitutes.guix.gofranz.com";
+
+/// Substitute URLs guix should use for `pull` / `system init`, per mode —
+/// mirrors the keys authorized in [`phase_authorize`]. The default CI server
+/// stays first; mode-specific servers are appended.
+fn substitute_urls(mode: &InstallMode) -> Vec<String> {
+    let mut urls = vec![GUIX_CI_URL.to_string()];
+    match mode {
+        InstallMode::Guix => {}
+        InstallMode::Nonguix => urls.push(NONGUIX_URL.into()),
+        InstallMode::Panther | InstallMode::Enterprise { .. } => {
+            urls.push(NONGUIX_URL.into());
+            urls.push(GOFRANZ_URL.into());
+        }
+    }
+    urls
+}
 
 const GUIX_DB_FILE: &str = "/var/guix/db/db.sqlite";
 const GUIX_DB_SAVE: &str = "/var/guix/db/db.save";
@@ -276,13 +297,29 @@ pub fn execute_installation(config: &SystemConfig, ui: &dyn UserInterface) -> Re
 
     for (num, func) in phases {
         if state.completed_phases.contains(num) {
+            ui.install_phase(*num, 8, phase_label(*num));
             ui.info(&format!("Phase {num}/8: Already completed, skipping."));
+            ui.progress(
+                &format!("Phase {num}/8 already complete"),
+                Some(progress::overall_pct(phase_for(*num), 1.0)),
+            );
             continue;
         }
 
+        ui.install_phase(*num, 8, phase_label(*num));
         installer_log::write_line("phase:", &format!("starting {num}/8"));
+        // Cheap phases report start here; the guix phases (7/8) report their
+        // own intra-phase fraction via guix_ops.
+        ui.progress(
+            &format!("Phase {num}/8 starting"),
+            Some(progress::overall_pct(phase_for(*num), 0.0)),
+        );
         func(config, ui, &mut session).map_err(|e| e.context(format!("Phase {num}/8 failed")))?;
         installer_log::write_line("phase:", &format!("completed {num}/8"));
+        ui.progress(
+            &format!("Phase {num}/8 complete"),
+            Some(progress::overall_pct(phase_for(*num), 1.0)),
+        );
         state.mark_complete(*num);
         state.save()?;
     }
@@ -290,6 +327,34 @@ pub fn execute_installation(config: &SystemConfig, ui: &dyn UserInterface) -> Re
     InstallState::cleanup()?;
     session.mark_complete();
     Ok(())
+}
+
+/// Short checklist label for a phase number, for the GUI install screen.
+fn phase_label(num: u8) -> &'static str {
+    match num {
+        1 => "Partition",
+        2 => "Format",
+        3 => "Mount",
+        4 => "Swap",
+        5 => "Config",
+        6 => "Authorize",
+        7 => "guix pull",
+        _ => "Install",
+    }
+}
+
+/// Maps the 1..=8 phase number to its weighted [`Phase`].
+fn phase_for(num: u8) -> Phase {
+    match num {
+        1 => Phase::Partition,
+        2 => Phase::Format,
+        3 => Phase::Mount,
+        4 => Phase::Swap,
+        5 => Phase::Config,
+        6 => Phase::Authorize,
+        7 => Phase::Pull,
+        _ => Phase::Install,
+    }
 }
 
 fn phase_partition(
@@ -320,10 +385,17 @@ fn phase_format(
     for cmd in &cmds {
         let args: Vec<&str> = cmd.iter().map(|s| s.as_str()).collect();
         if cmd[0] == "cryptsetup" {
-            let exit = exec::run_cmd_interactive(&args)?;
-            if exit != 0 {
-                anyhow::bail!("cryptsetup failed with exit code {exit}");
-            }
+            // The passphrase reaches cryptsetup via stdin (`--key-file -`),
+            // never argv — see disk::format::encryption_commands.
+            let passphrase = config
+                .encryption
+                .as_ref()
+                .and_then(|e| e.passphrase.as_ref())
+                .context(
+                    "encryption is enabled but no LUKS passphrase is set; \
+                     re-run and enter it at the encryption step",
+                )?;
+            exec::run_cmd_with_stdin(&args, passphrase.as_str())?;
         } else {
             exec::run_cmd(&args)?;
         }
@@ -408,8 +480,7 @@ fn phase_config(
         }
 
         if let Some(password) = &config.password {
-            let pw = Zeroizing::new(password.clone());
-            passwd::seed_shadow(Path::new("/mnt"), &config.users, &pw)?;
+            passwd::seed_shadow(Path::new("/mnt"), &config.users, password)?;
             ui.info("  Seeded /mnt/etc/shadow");
         }
     }
@@ -470,11 +541,11 @@ fn phase_pull(
     }
 
     ui.info("  Running guix pull (this may take a while)...");
-    let exit =
-        exec::run_cmd_interactive(&["guix", "pull", "--channels=/mnt/etc/guix/channels.scm"])?;
-    if exit != 0 {
-        anyhow::bail!("guix pull failed with exit code {exit}");
-    }
+    crate::guix_ops::run_pull(
+        Path::new("/mnt/etc/guix/channels.scm"),
+        substitute_urls(&config.mode),
+        ui,
+    )?;
 
     Ok(())
 }
@@ -499,7 +570,7 @@ fn channels_available(config: &SystemConfig) -> bool {
 }
 
 fn phase_install(
-    _config: &SystemConfig,
+    config: &SystemConfig,
     ui: &dyn UserInterface,
     session: &mut InstallSession,
 ) -> Result<()> {
@@ -508,17 +579,12 @@ fn phase_install(
     // Snapshot guix-daemon's local DB; restored on Drop regardless of outcome.
     session.save_db()?;
 
-    let exit = exec::run_cmd_interactive(&[
-        "guix",
-        "system",
-        "init",
-        "--fallback",
-        "/mnt/etc/system.scm",
-        "/mnt",
-    ])?;
-    if exit != 0 {
-        anyhow::bail!("guix system init failed with exit code {exit}");
-    }
+    crate::guix_ops::run_system_init(
+        Path::new("/mnt/etc/system.scm"),
+        Path::new(TARGET_DIR),
+        substitute_urls(&config.mode),
+        ui,
+    )?;
 
     ui.info("Installation complete! You can now reboot.");
     ui.info(&format!(
@@ -568,8 +634,8 @@ mod tests {
             fn input(&mut self, _: &str, _: &str) -> Result<String> {
                 Ok(String::new())
             }
-            fn password(&mut self, _: &str) -> Result<String> {
-                Ok(String::new())
+            fn password(&mut self, _: &str) -> Result<zeroize::Zeroizing<String>> {
+                Ok(zeroize::Zeroizing::new(String::new()))
             }
             fn confirm(&mut self, _: &str, _: bool) -> Result<bool> {
                 Ok(false)

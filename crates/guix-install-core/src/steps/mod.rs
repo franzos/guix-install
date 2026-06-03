@@ -1,3 +1,4 @@
+mod data;
 pub mod desktop;
 pub mod disk;
 pub mod encryption;
@@ -45,6 +46,22 @@ pub enum StepId {
     Summary,
 }
 
+impl StepId {
+    pub fn label(&self) -> &'static str {
+        match self {
+            StepId::Mode => "Mode",
+            StepId::Locale => "Locale",
+            StepId::Timezone => "Timezone",
+            StepId::Hostname => "Hostname",
+            StepId::Disk => "Disk",
+            StepId::Encryption => "Encryption",
+            StepId::Users => "Users",
+            StepId::Desktop => "Desktop",
+            StepId::Summary => "Summary",
+        }
+    }
+}
+
 pub enum StepResult {
     Next,
     Back,
@@ -70,6 +87,10 @@ impl StepNavigator {
 
     pub fn current(&self) -> StepId {
         self.steps[self.current]
+    }
+
+    pub fn current_index(&self) -> usize {
+        self.current
     }
 
     pub fn advance(&mut self) {

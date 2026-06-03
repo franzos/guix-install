@@ -1,31 +1,21 @@
+mod repl;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use guix_install::config::{
+use guix_install_core::config::{
     BlockDevice, DesktopEnvironment, EncryptionConfig, Filesystem, Firmware, SystemConfig,
     UserAccount, generate_hostname, validate_config_id, validate_hostname, validate_ssh_public_key,
     validate_username,
 };
-use guix_install::disk::detect::{detect_block_devices, format_device};
-use guix_install::install;
-use guix_install::mode::InstallMode;
-use guix_install::repl::Repl;
-use guix_install::resume::InstallState;
-use guix_install::scheme::channels::render_channels;
-use guix_install::scheme::operating_system::render_operating_system;
-use guix_install::steps::StepResult;
-use guix_install::steps::desktop::step_desktop;
-use guix_install::steps::disk::step_disk;
-use guix_install::steps::encryption::step_encryption;
-use guix_install::steps::hostname::step_hostname;
-use guix_install::steps::locale::step_locale;
-use guix_install::steps::mode::step_mode;
-use guix_install::steps::summary::step_summary;
-use guix_install::steps::timezone::step_timezone;
-use guix_install::steps::users::step_users;
-use guix_install::steps::{StepId, StepNavigator};
-use guix_install::ui::UserInterface;
-use guix_install::wifi;
+use guix_install_core::disk::detect::{detect_block_devices, format_device};
+use guix_install_core::mode::InstallMode;
+use guix_install_core::run;
+use guix_install_core::scheme::channels::render_channels;
+use guix_install_core::scheme::operating_system::render_operating_system;
+use guix_install_core::wifi;
+
+use repl::Repl;
 
 #[derive(Parser)]
 #[command(
@@ -192,6 +182,7 @@ fn build_config(cli: &Cli) -> Result<SystemConfig> {
     let encryption = if cli.encrypt {
         Some(EncryptionConfig {
             device_target: "cryptroot".into(),
+            passphrase: None,
         })
     } else {
         None
@@ -227,101 +218,9 @@ fn build_config(cli: &Cli) -> Result<SystemConfig> {
     })
 }
 
-/// On startup, if a saved install state exists, ask the user whether to resume
-/// it or discard and start fresh. Returns `Some(config)` if resuming, `None` if
-/// starting fresh.
-fn handle_resume(ui: &mut Repl, state: InstallState) -> Result<Option<SystemConfig>> {
-    let last = state.completed_phases.last().copied().unwrap_or(0);
-    let mode = state.config.mode.label();
-    let disk = &state.config.disk.dev_path;
-
-    ui.info(&format!(
-        "Found incomplete installation: completed through phase {last}/8 \
-         (mode={mode}, disk={disk})."
-    ));
-
-    let options = &["Resume previous installation", "Discard and start fresh"];
-    let choice = ui.select("What next?", options, 0)?;
-    if choice != 0 {
-        InstallState::cleanup()?;
-        ui.info("Discarded previous state.");
-        return Ok(None);
-    }
-
-    let mut config = state.config;
-    if !state.completed_phases.contains(&8) {
-        let pw = ui.password("User password (re-enter to resume install)")?;
-        config.password = Some(pw);
-    }
-    Ok(Some(config))
-}
-
 fn run_interactive(dry_run: bool) -> Result<()> {
     let mut ui = Repl::new();
-
-    ui.info("guix-install — Guix System Installer");
-    ui.info("");
-
-    if !dry_run
-        && let Some(state) = InstallState::load()?
-        && let Some(config) = handle_resume(&mut ui, state)?
-    {
-        return install::execute_installation(&config, &ui);
-    }
-
-    let mut config = SystemConfig::default();
-    let mut nav = StepNavigator::new(&config.mode);
-
-    loop {
-        let result = match nav.current() {
-            StepId::Mode => {
-                let old_mode = config.mode.clone();
-                let r = step_mode(&mut ui, &mut config)?;
-                if config.mode != old_mode {
-                    nav.reset_for_mode(&config.mode);
-                    continue;
-                }
-                r
-            }
-            StepId::Locale => step_locale(&mut ui, &mut config)?,
-            StepId::Timezone => step_timezone(&mut ui, &mut config)?,
-            StepId::Hostname => step_hostname(&mut ui, &mut config)?,
-            StepId::Disk => step_disk(&mut ui, &mut config)?,
-            StepId::Encryption => step_encryption(&mut ui, &mut config)?,
-            StepId::Users => step_users(&mut ui, &mut config)?,
-            StepId::Desktop => step_desktop(&mut ui, &mut config)?,
-            StepId::Summary => step_summary(&mut ui, &mut config)?,
-        };
-
-        match result {
-            StepResult::Next => {
-                if nav.is_last() {
-                    break;
-                }
-                nav.advance();
-            }
-            StepResult::Back => nav.go_back(),
-            StepResult::Quit => {
-                ui.info("Installation cancelled.");
-                return Ok(());
-            }
-        }
-    }
-
-    // After REPL completes, show generated config
-    let system_scm = render_operating_system(&config);
-    if !system_scm.is_empty() {
-        println!("\n;;; Generated system.scm:");
-        println!("{system_scm}");
-    }
-
-    if dry_run {
-        ui.info("Dry run: skipping installation execution.");
-        return Ok(());
-    }
-
-    install::execute_installation(&config, &ui)?;
-    Ok(())
+    run::run_interactive(&mut ui, dry_run)
 }
 
 fn main() -> Result<()> {

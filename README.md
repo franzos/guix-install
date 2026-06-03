@@ -17,6 +17,8 @@ Pre-1.0. Runs end-to-end on the machines I've tested. **Read what it's about to 
 
 Prebuilt **static x86_64 binaries** (musl, no runtime deps) are attached to each [GitHub release](https://github.com/franzos/guix-install/releases) so you can use this on a plain Guix ISO without building anything.
 
+There's now a **graphical frontend** (`guix-install-gui`) — a second frontend over the exact same install logic, keyboard-first, built on [iced](https://iced.rs). It covers the same modes, steps, and phases as the CLI.
+
 ## Modes
 
 | Channel | Kernel | Notes |
@@ -28,10 +30,17 @@ Prebuilt **static x86_64 binaries** (musl, no runtime deps) are attached to each
 
 ## Build
 
+The project is a Cargo workspace: `guix-install-core` (the library — all the install logic) plus two binaries, `guix-install` (CLI) and `guix-install-gui` (GUI). `manifest.scm` carries everything both need (toolchain, `CC`/`OPENSSL_DIR` exports, and the GUI's Wayland/render libs), so the workspace builds in one shot:
+
 ```bash
-guix shell rust rust:cargo gcc-toolchain -- sh -c "CC=gcc cargo build --release"
-# or
 guix shell -m manifest.scm -- cargo build --release
+```
+
+Build a single binary with `-p`. The CLI never pulls in iced, so a CLI-only build (the static-release path) needs nothing from the GUI side:
+
+```bash
+guix shell -m manifest.scm -- cargo build --release -p guix-install        # CLI
+guix shell -m manifest.scm -- cargo build --release -p guix-install-gui    # GUI
 ```
 
 ## Usage
@@ -99,6 +108,19 @@ guix-install list-disks    # lsblk-style summary
 guix-install wifi          # connmanctl WiFi setup
 ```
 
+## Graphical installer
+
+`guix-install-gui` is the same installer with an iced frontend instead of the REPL — same modes, same steps, same 8-phase pipeline, same generated `system.scm`. It's keyboard-first (Tab/arrows/Enter/Esc; the pointer is optional), with a left step rail and a live progress screen for the install phases.
+
+It runs as an ordinary window in any Wayland/X session, so you can build and try it on a normal desktop:
+
+```bash
+guix shell -m manifest.scm -- cargo run -p guix-install-gui -- --dry-run   # interview only, nothing touched
+guix shell -m manifest.scm -- cargo run -p guix-install-gui                # real install (needs root + a target disk)
+```
+
+In the bare install environment there's no desktop, so it runs under [`cage`](https://github.com/cage-kiosk/cage) (a single-window Wayland kiosk compositor) on the TTY. Baking it into the PantherX ISO and wiring that launch path is still pending — for now the CLI is what ships on the ISO.
+
 ## Phases
 
 8 phases, state persisted to `/tmp/.guix-install-state` after each:
@@ -120,7 +142,9 @@ Re-running picks up at the failed phase. Change disk/mode/firmware and state is 
 - **Substitute keys compiled in** via `include_str!`.
 - **Enterprise tarballs streamed** through `ureq → flate2 → tar`. No intermediate file.
 - **Partition naming** handles NVMe/MMC (`/dev/nvme0n1p1`) vs SATA (`/dev/sda1`) via `disk::partition_path`.
-- **UI is a trait** (`UserInterface`). REPL uses `dialoguer`; TUI/GUI plug in without touching step logic.
+- **LUKS passphrases**, like passwords, stay in `Zeroizing<String>` and reach `cryptsetup` over stdin (`--key-file -`), never argv, disk, or saved state.
+- **`guix pull` / `guix system init`** run through `libguix` for structured progress (substitute downloads, per-derivation builds) — the same in both frontends. The other shell-outs (partition/format/mount) stay direct.
+- **UI is a trait** (`UserInterface`), and the project is a workspace: `guix-install-core` holds all the logic, with two thin frontends — `guix-install` (CLI, `dialoguer`) and `guix-install-gui` (iced) — plugging in without touching step logic. The CLI build never compiles iced.
 
 ## Development
 

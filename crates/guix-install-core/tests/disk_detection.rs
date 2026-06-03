@@ -1,15 +1,15 @@
-use guix_install::config::{
+use guix_install_core::config::{
     BlockDevice, EncryptionConfig, Filesystem, Firmware, SystemConfig, UserAccount,
 };
-use guix_install::disk::Action;
-use guix_install::disk::detect::{format_device, parse_lsblk_json};
-use guix_install::disk::format::{
+use guix_install_core::disk::Action;
+use guix_install_core::disk::detect::{format_device, parse_lsblk_json};
+use guix_install_core::disk::format::{
     encryption_commands, format_commands, format_efi_commands, format_root_commands,
 };
-use guix_install::disk::mount::{mount_actions, swap_actions};
-use guix_install::disk::partition::partition_commands;
-use guix_install::disk::partition_path;
-use guix_install::mode::InstallMode;
+use guix_install_core::disk::mount::{mount_actions, swap_actions};
+use guix_install_core::disk::partition::partition_commands;
+use guix_install_core::disk::partition_path;
+use guix_install_core::mode::InstallMode;
 use std::path::PathBuf;
 
 // --- lsblk parsing fixtures ---
@@ -222,6 +222,7 @@ fn format_ext4_encrypted() {
     let mut config = test_config("/dev/sda", "sda");
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     let cmds = format_root_commands(&config);
     assert_eq!(cmds[0][4], "/dev/mapper/cryptroot");
@@ -234,6 +235,7 @@ fn format_btrfs_encrypted() {
     config.filesystem = Filesystem::Btrfs;
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     let cmds = format_root_commands(&config);
     assert_eq!(cmds.len(), 1);
@@ -256,7 +258,17 @@ fn format_efi_nvme() {
 fn encryption_commands_sata() {
     let cmds = encryption_commands("/dev/sda", "cryptroot");
     assert_eq!(cmds.len(), 2);
-    assert_eq!(cmds[0], vec!["cryptsetup", "luksFormat", "/dev/sda2"]);
+    assert_eq!(
+        cmds[0],
+        vec![
+            "cryptsetup",
+            "luksFormat",
+            "--batch-mode",
+            "--key-file",
+            "-",
+            "/dev/sda2"
+        ]
+    );
     assert_eq!(
         cmds[1],
         vec![
@@ -264,6 +276,8 @@ fn encryption_commands_sata() {
             "open",
             "--type",
             "luks",
+            "--key-file",
+            "-",
             "/dev/sda2",
             "cryptroot"
         ]
@@ -273,8 +287,8 @@ fn encryption_commands_sata() {
 #[test]
 fn encryption_commands_nvme() {
     let cmds = encryption_commands("/dev/nvme0n1", "cryptroot");
-    assert_eq!(cmds[0][2], "/dev/nvme0n1p2");
-    assert_eq!(cmds[1][4], "/dev/nvme0n1p2");
+    assert_eq!(cmds[0].last().unwrap(), "/dev/nvme0n1p2");
+    assert_eq!(cmds[1][cmds[1].len() - 2], "/dev/nvme0n1p2");
 }
 
 #[test]
@@ -283,6 +297,7 @@ fn format_commands_complete_efi_encrypted() {
     config.firmware = Firmware::Efi;
     config.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
 
     let cmds = format_commands(&config);

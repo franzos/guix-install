@@ -25,13 +25,13 @@
 //! `assert-valid-graph` shepherd check — which is what catches drift — but
 //! skips the actual store build.
 
-use guix_install::config::{
+use guix_install_core::config::{
     BlockDevice, DesktopEnvironment, EncryptionConfig, Filesystem, Firmware, SystemConfig,
     UserAccount,
 };
-use guix_install::mode::InstallMode;
-use guix_install::scheme::channels::render_channels;
-use guix_install::scheme::operating_system::render_operating_system;
+use guix_install_core::mode::InstallMode;
+use guix_install_core::scheme::channels::render_channels;
+use guix_install_core::scheme::operating_system::render_operating_system;
 
 use std::process::Command;
 
@@ -139,6 +139,7 @@ fn guix_efi_btrfs_luks_gnome() {
     c.filesystem = Filesystem::Btrfs;
     c.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     c.desktop = Some(DesktopEnvironment::Gnome);
     validate(&c);
@@ -152,6 +153,7 @@ fn nonguix_bios_ext4_luks_headless() {
     c.firmware = Firmware::Bios;
     c.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     validate(&c);
 }
@@ -185,6 +187,7 @@ fn panther_efi_btrfs_luks_gnome() {
     c.filesystem = Filesystem::Btrfs;
     c.encryption = Some(EncryptionConfig {
         device_target: "cryptroot".into(),
+        passphrase: None,
     });
     c.desktop = Some(DesktopEnvironment::Gnome);
     validate(&c);

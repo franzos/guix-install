@@ -1,10 +1,13 @@
 use anyhow::Result;
 use console::Style;
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Confirm, Input, Password, Select};
+use dialoguer::{Confirm, FuzzySelect, Input, Password, Select};
 
-use crate::installer_log;
-use crate::ui::{UserCancelled, UserInterface};
+use guix_install_core::installer_log;
+use guix_install_core::ui::{UserCancelled, UserInterface};
+
+/// Above this many options, switch to a type-to-filter select.
+const FUZZY_THRESHOLD: usize = 12;
 
 #[derive(Default)]
 pub struct Repl {
@@ -28,11 +31,19 @@ fn map_dialoguer<T>(result: std::result::Result<T, dialoguer::Error>) -> Result<
 
 impl UserInterface for Repl {
     fn select(&mut self, prompt: &str, options: &[&str], default: usize) -> Result<usize> {
-        let result = Select::with_theme(&self.theme)
-            .with_prompt(prompt)
-            .items(options)
-            .default(default)
-            .interact_opt()?;
+        let result = if options.len() > FUZZY_THRESHOLD {
+            FuzzySelect::with_theme(&self.theme)
+                .with_prompt(prompt)
+                .items(options)
+                .default(default)
+                .interact_opt()?
+        } else {
+            Select::with_theme(&self.theme)
+                .with_prompt(prompt)
+                .items(options)
+                .default(default)
+                .interact_opt()?
+        };
         match result {
             Some(idx) => Ok(idx),
             None => Err(anyhow::Error::new(UserCancelled)),
@@ -48,12 +59,13 @@ impl UserInterface for Repl {
         )
     }
 
-    fn password(&mut self, prompt: &str) -> Result<String> {
+    fn password(&mut self, prompt: &str) -> Result<zeroize::Zeroizing<String>> {
         map_dialoguer(
             Password::with_theme(&self.theme)
                 .with_prompt(prompt)
                 .interact(),
         )
+        .map(zeroize::Zeroizing::new)
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool> {

@@ -1,0 +1,30 @@
+[package]
+name = "guix-install-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Shared logic for the Guix System installer (config, steps, scheme generation, install pipeline)"
+
+[lib]
+name = "guix_install_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+rand.workspace = true
+ureq.workspace = true
+tar.workspace = true
+flate2.workspace = true
+pwhash.workspace = true
+zeroize.workspace = true
+rustix.workspace = true
+base64.workspace = true
+libguix = { version = "0.1.7", default-features = false }
+tokio = { version = "1", features = ["rt", "macros"] }
+futures-util = { version = "0.3", default-features = false }
+
+[dev-dependencies]
+tempfile.workspace = true

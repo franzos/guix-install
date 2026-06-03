@@ -1,6 +1,6 @@
 use std::fs;
 
-use guix_install::enterprise;
+use guix_install_core::enterprise;
 
 #[test]
 fn load_extracted_config_with_all_files() {

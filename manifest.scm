@@ -3,7 +3,13 @@
              (gnu packages rust)
              (gnu packages commencement)
              (gnu packages tls)
-             (gnu packages base))
+             (gnu packages base)
+             (gnu packages pkg-config)
+             (gnu packages freedesktop)
+             (gnu packages xdisorg)
+             (gnu packages xml)
+             (gnu packages fontutils)
+             (gnu packages gl))
 
 (define openssl-with-dir
   (package
@@ -32,4 +38,13 @@
        (list rust "cargo")
        rust-analyzer
        gcc-toolchain-with-cc
-       openssl-with-dir))
+       openssl-with-dir
+       ;; GUI (iced 0.14, tiny-skia software renderer) build + runtime deps
+       pkg-config
+       wayland
+       libxkbcommon
+       expat
+       fontconfig
+       freetype
+       mesa
+       libglvnd))

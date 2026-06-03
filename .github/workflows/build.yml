@@ -23,11 +23,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # The GUI crate (guix-install-gui) links iced/winit against system
+      # libraries and can't be a static-musl build, so it's excluded here.
       - name: Test
-        run: cargo test --release --locked --target x86_64-unknown-linux-musl
+        run: cargo test --release --locked --workspace --exclude guix-install-gui --target x86_64-unknown-linux-musl
 
       - name: Build (static musl)
-        run: cargo build --release --locked --target x86_64-unknown-linux-musl
+        run: cargo build --release --locked -p guix-install --target x86_64-unknown-linux-musl
 
       - name: Strip and verify static
         run: |

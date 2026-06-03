@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use crate::mode::InstallMode;
 
@@ -22,7 +23,7 @@ pub struct SystemConfig {
     pub swap_size_mb: u32,
     /// User password for chroot passwd after install. Not written to .scm.
     #[serde(skip)]
-    pub password: Option<String>,
+    pub password: Option<Zeroizing<String>>,
     /// User-edited replacement for the rendered system.scm. When set, phase 5
     /// writes this verbatim instead of rendering from the other config fields.
     #[serde(default)]
@@ -36,9 +37,13 @@ pub struct UserAccount {
     pub groups: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EncryptionConfig {
     pub device_target: String,
+    /// LUKS passphrase. Never written to `system.scm` or serialized state;
+    /// fed to `cryptsetup` via stdin in phase 2. Re-prompted on resume.
+    #[serde(skip)]
+    pub passphrase: Option<Zeroizing<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

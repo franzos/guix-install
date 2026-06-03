@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="box-top" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fcd34d"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+    <linearGradient id="box-left" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="box-right" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#c2410c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded square background -->
+  <rect x="0" y="0" width="256" height="256" rx="48" fill="url(#bg)"/>
+
+  <!-- isometric package box, centered -->
+  <!-- top face -->
+  <polygon points="128,40 208,80 128,120 48,80"
+           fill="url(#box-top)" stroke="#78350f" stroke-width="1.5"/>
+  <!-- left face -->
+  <polygon points="48,80 128,120 128,216 48,176"
+           fill="url(#box-left)" stroke="#78350f" stroke-width="1.5"/>
+  <!-- right face -->
+  <polygon points="208,80 128,120 128,216 208,176"
+           fill="url(#box-right)" stroke="#78350f" stroke-width="1.5"/>
+  <!-- tape seam on the top -->
+  <line x1="88" y1="60" x2="168" y2="100" stroke="#78350f" stroke-width="1.5" opacity="0.55"/>
+  <line x1="168" y1="60" x2="88" y2="100" stroke="#78350f" stroke-width="1.5" opacity="0.55"/>
+</svg>

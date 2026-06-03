@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.3] - 2026-06-03
+
+### Added
+- Graphical installer (`guix-install-gui`), an iced frontend over the same logic.
+- Live, structured progress for `guix pull` / `guix system init`, in both frontends.
+- In-app `system.scm` editor in the GUI.
+
+### Changed
+- Project split into a Cargo workspace; the CLI builds with no GUI dependencies.
+- LUKS passphrase entered during setup, fed to `cryptsetup` without a TTY prompt.
+
 ## [0.1.2] - 2026-05-10
 
 ### Added

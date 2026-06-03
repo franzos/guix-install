@@ -1,5 +1,5 @@
-use guix_install::mode::InstallMode;
-use guix_install::steps::{StepId, StepNavigator};
+use guix_install_core::mode::InstallMode;
+use guix_install_core::steps::{StepId, StepNavigator};
 
 #[test]
 fn panther_includes_all_steps() {

@@ -1,0 +1,18 @@
+[package]
+name = "guix-install-gui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Graphical (iced) frontend for the Guix System installer"
+
+[[bin]]
+name = "guix-install-gui"
+path = "src/main.rs"
+
+[dependencies]
+guix-install-core = { path = "../guix-install-core" }
+libguix = { version = "0.1.7", default-features = false }
+anyhow.workspace = true
+zeroize.workspace = true
+iced = { version = "0.14", features = ["svg"] }

@@ -1,19 +1,22 @@
-[package]
-name = "guix-install"
-version = "0.1.2"
+[workspace]
+resolver = "2"
+members = [
+    "crates/guix-install-core",
+    "crates/guix-install",
+    "crates/guix-install-gui",
+]
+
+[workspace.package]
+version = "0.1.3"
 edition = "2024"
 authors = ["Franz Geffke <mail@gofranz.com>"]
 license = "GPL-3.0-only"
-description = "Interactive Rust installer for Guix System (Guix, Nonguix, Panther, and Enterprise modes)"
 
-[dependencies]
+[workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 rand = "0.8"
-dialoguer = "0.11"
-console = "0.15"
 ureq = "2"
 tar = "0.4"
 flate2 = "1"
@@ -21,6 +24,7 @@ pwhash = "1"
 zeroize = "1"
 rustix = { version = "0.38", features = ["mount", "process", "thread"] }
 base64 = "0.22"
-
-[dev-dependencies]
+clap = { version = "4", features = ["derive"] }
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
+console = "0.15"
 tempfile = "3"

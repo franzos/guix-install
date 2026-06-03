@@ -1,0 +1,151 @@
+Afar (Djibouti)	aa_DJ.utf8
+Afrikaans (South Africa)	af_ZA.utf8
+Albanian (Albania)	sq_AL.utf8
+Arabic (Algeria)	ar_DZ.utf8
+Arabic (Bahrain)	ar_BH.utf8
+Arabic (Egypt)	ar_EG.utf8
+Arabic (Iraq)	ar_IQ.utf8
+Arabic (Jordan)	ar_JO.utf8
+Arabic (Kuwait)	ar_KW.utf8
+Arabic (Lebanon)	ar_LB.utf8
+Arabic (Libya)	ar_LY.utf8
+Arabic (Morocco)	ar_MA.utf8
+Arabic (Oman)	ar_OM.utf8
+Arabic (Qatar)	ar_QA.utf8
+Arabic (Saudi Arabia)	ar_SA.utf8
+Arabic (Sudan)	ar_SD.utf8
+Arabic (Syrian Arab Republic)	ar_SY.utf8
+Arabic (Tunisia)	ar_TN.utf8
+Arabic (United Arab Emirates)	ar_AE.utf8
+Arabic (Yemen)	ar_YE.utf8
+Aragonese (Spain)	an_ES.utf8
+Asturian (Spain)	ast_ES.utf8
+Basque (Spain)	eu_ES.utf8
+Belarusian (Belarus)	be_BY.utf8
+Bhili (India)	bhb_IN.utf8
+Bosnian (Bosnia and Herzegovina)	bs_BA.utf8
+Breton (France)	br_FR.utf8
+Bulgarian (Bulgaria)	bg_BG.utf8
+C (POSIX)	C.utf8
+Catalan (Andorra)	ca_AD.utf8
+Catalan (France)	ca_FR.utf8
+Catalan (Italy)	ca_IT.utf8
+Catalan (Spain)	ca_ES.utf8
+Chinese (China)	zh_CN.utf8
+Chinese (Hong Kong)	zh_HK.utf8
+Chinese (Singapore)	zh_SG.utf8
+Chinese (Taiwan)	zh_TW.utf8
+Cornish (United Kingdom)	kw_GB.utf8
+Croatian (Croatia)	hr_HR.utf8
+Czech (Czechia)	cs_CZ.utf8
+Danish (Denmark)	da_DK.utf8
+Dutch (Belgium)	nl_BE.utf8
+Dutch (Netherlands)	nl_NL.utf8
+English (Australia)	en_AU.utf8
+English (Botswana)	en_BW.utf8
+English (Canada)	en_CA.utf8
+English (Denmark)	en_DK.utf8
+English (Hong Kong)	en_HK.utf8
+English (Ireland)	en_IE.utf8
+English (New Zealand)	en_NZ.utf8
+English (Philippines)	en_PH.utf8
+English (Seychelles)	en_SC.utf8
+English (Singapore)	en_SG.utf8
+English (South Africa)	en_ZA.utf8
+English (United Kingdom)	en_GB.utf8
+English (United States)	en_US.utf8
+English (Zimbabwe)	en_ZW.utf8
+Estonian (Estonia)	et_EE.utf8
+Faroese (Faroe Islands)	fo_FO.utf8
+Finnish (Finland)	fi_FI.utf8
+French (Belgium)	fr_BE.utf8
+French (Canada)	fr_CA.utf8
+French (France)	fr_FR.utf8
+French (Luxembourg)	fr_LU.utf8
+French (Switzerland)	fr_CH.utf8
+Galician (Spain)	gl_ES.utf8
+Ganda (Uganda)	lg_UG.utf8
+Georgian (Georgia)	ka_GE.utf8
+German (Austria)	de_AT.utf8
+German (Belgium)	de_BE.utf8
+German (Germany)	de_DE.utf8
+German (Italy)	de_IT.utf8
+German (Liechtenstein)	de_LI.utf8
+German (Luxembourg)	de_LU.utf8
+German (Switzerland)	de_CH.utf8
+Greek (Cyprus)	el_CY.utf8
+Greek (Greece)	el_GR.utf8
+Hebrew (Israel)	he_IL.utf8
+Hungarian (Hungary)	hu_HU.utf8
+Icelandic (Iceland)	is_IS.utf8
+Indonesian (Indonesia)	id_ID.utf8
+Irish (Ireland)	ga_IE.utf8
+Italian (Italy)	it_IT.utf8
+Italian (Switzerland)	it_CH.utf8
+Japanese (Japan)	ja_JP.utf8
+Kalaallisut (Greenland)	kl_GL.utf8
+Kazakh (Kazakhstan)	kk_KZ.utf8
+Korean (South Korea)	ko_KR.utf8
+Kurdish (Turkey)	ku_TR.utf8
+Latgalian (Latvia)	ltg_LV.utf8
+Latvian (Latvia)	lv_LV.utf8
+Lithuanian (Lithuania)	lt_LT.utf8
+Macedonian (North Macedonia)	mk_MK.utf8
+Malagasy (Madagascar)	mg_MG.utf8
+Malay (Malaysia)	ms_MY.utf8
+Maltese (Malta)	mt_MT.utf8
+Manx (United Kingdom)	gv_GB.utf8
+Maori (New Zealand)	mi_NZ.utf8
+Norwegian Bokmål (Norway)	nb_NO.utf8
+Norwegian Nynorsk (Norway)	nn_NO.utf8
+Occitan (France)	oc_FR.utf8
+Oromo (Kenya)	om_KE.utf8
+Polish (Poland)	pl_PL.utf8
+Portuguese (Brazil)	pt_BR.utf8
+Portuguese (Portugal)	pt_PT.utf8
+Romanian (Romania)	ro_RO.utf8
+Russian (Russian Federation)	ru_RU.utf8
+Russian (Ukraine)	ru_UA.utf8
+Scottish Gaelic (United Kingdom)	gd_GB.utf8
+Slovak (Slovakia)	sk_SK.utf8
+Slovenian (Slovenia)	sl_SI.utf8
+Somali (Djibouti)	so_DJ.utf8
+Somali (Kenya)	so_KE.utf8
+Somali (Somalia)	so_SO.utf8
+Southern Sotho (South Africa)	st_ZA.utf8
+Spanish (Argentina)	es_AR.utf8
+Spanish (Bolivia)	es_BO.utf8
+Spanish (Chile)	es_CL.utf8
+Spanish (Colombia)	es_CO.utf8
+Spanish (Costa Rica)	es_CR.utf8
+Spanish (Dominican Republic)	es_DO.utf8
+Spanish (Ecuador)	es_EC.utf8
+Spanish (El Salvador)	es_SV.utf8
+Spanish (Guatemala)	es_GT.utf8
+Spanish (Honduras)	es_HN.utf8
+Spanish (Mexico)	es_MX.utf8
+Spanish (Nicaragua)	es_NI.utf8
+Spanish (Panama)	es_PA.utf8
+Spanish (Paraguay)	es_PY.utf8
+Spanish (Peru)	es_PE.utf8
+Spanish (Puerto Rico)	es_PR.utf8
+Spanish (Spain)	es_ES.utf8
+Spanish (United States)	es_US.utf8
+Spanish (Uruguay)	es_UY.utf8
+Spanish (Venezuela)	es_VE.utf8
+Swedish (Finland)	sv_FI.utf8
+Swedish (Sweden)	sv_SE.utf8
+Tagalog (Philippines)	tl_PH.utf8
+Tajik (Tajikistan)	tg_TJ.utf8
+Thai (Thailand)	th_TH.utf8
+Tulu (India)	tcy_IN.utf8
+Turkish (Cyprus)	tr_CY.utf8
+Turkish (Turkey)	tr_TR.utf8
+Ukrainian (Ukraine)	uk_UA.utf8
+Upper Sorbian (Germany)	hsb_DE.utf8
+Uzbek (Uzbekistan)	uz_UZ.utf8
+Walloon (Belgium)	wa_BE.utf8
+Welsh (United Kingdom)	cy_GB.utf8
+Xhosa (South Africa)	xh_ZA.utf8
+Yiddish (United States)	yi_US.utf8
+Zulu (South Africa)	zu_ZA.utf8

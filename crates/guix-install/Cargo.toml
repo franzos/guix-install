@@ -1,0 +1,19 @@
+[package]
+name = "guix-install"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Interactive Rust installer for Guix System (Guix, Nonguix, Panther, and Enterprise modes)"
+
+[[bin]]
+name = "guix-install"
+path = "src/main.rs"
+
+[dependencies]
+guix-install-core = { path = "../guix-install-core" }
+anyhow.workspace = true
+zeroize.workspace = true
+clap.workspace = true
+dialoguer.workspace = true
+console.workspace = true
