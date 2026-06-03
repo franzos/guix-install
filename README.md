@@ -112,6 +112,10 @@ guix-install wifi          # connmanctl WiFi setup
 
 `guix-install-gui` is the same installer with an iced frontend instead of the REPL — same modes, same steps, same 8-phase pipeline, same generated `system.scm`. It's keyboard-first (Tab/arrows/Enter/Esc; the pointer is optional), with a left step rail and a live progress screen for the install phases.
 
+<p align="center">
+  <img src="assets/installer-gui.png" alt="Graphical installer — Install progress screen" width="720">
+</p>
+
 It runs as an ordinary window in any Wayland/X session, so you can build and try it on a normal desktop:
 
 ```bash
