@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.4] - 2026-06-04
+
+### Added
+- "Shut down" button on the installation-complete screen.
+
 ## [0.1.3] - 2026-06-03
 
 ### Added

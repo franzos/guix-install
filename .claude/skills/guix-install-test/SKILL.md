@@ -92,7 +92,7 @@ Last line should print the installer's banner — confirms it can dlopen libgcc 
 Print a compact table of what to pick at each REPL step. Match the user's chosen scenario. Always include:
 - Mode (Guix / Nonguix / Panther / Enterprise)
 - Filesystem (ext4 / btrfs)
-- Encryption (yes/no — if yes, mention `cryptsetup` wants **capital `YES`** for confirmation, not lowercase)
+- Encryption (yes/no — the passphrase is entered once and piped to cryptsetup via `--key-file -`; `luksFormat --batch-mode` means no extra confirmation prompt)
 - Disk: `/dev/vda`
 - Username: `panther`, password: `test1234`
 - Skip SSH key, no desktop, defaults for locale/timezone/hostname/swap
@@ -136,7 +136,7 @@ If the installer code changed between cycles, **rebuild + re-patchelf** before c
 
 - **No private mount namespace.** `herd start cow-store /mnt` dispatches to shepherd (PID 1, host namespace). If the installer enters a private mount namespace before mounting `/mnt`, shepherd doesn't see the mount and cow-store overlays onto the live overlayfs root — fails with "filesystem on /mnt/tmp/guix-inst not supported as upperdir". This is fixed in code; if you ever see that error again, look for `unshare(NEWNS)` regressions.
 - **Btrfs swap.** Plain zero-filled file + `swapon` returns `EINVAL` because the file is CoW. Use `btrfs filesystem mkswapfile -s <size>m /mnt/swapfile`. Already fixed in code.
-- **Capital YES.** cryptsetup luksFormat asks for "yes" but actually requires `YES`.
+- **No cryptsetup confirmation.** The installer runs `cryptsetup luksFormat --batch-mode --key-file -`, so there's no "Type YES" prompt and no passphrase re-entry — it's piped in once via stdin.
 - **First-boot ext4 orphan replay.** A streaming "clearing orphaned inode N" log on first boot is the kernel replaying the journal — wait it out (a few minutes). Not a bug.
 - **VM exit on user shutdown.** When the user shuts down inside the VM, the QEMU background task ends with exit 0. Pkill returns 144 (the bash wrapper got killed). Both are normal.
 - **libgcc_s.so.1.** The release binary links dynamically against a specific Guix store path. If that path isn't in the live ISO's store, the binary fails to load. RPATH-patching to `/root:$ORIGIN` plus copying `libgcc_s.so.1` next to it solves this.

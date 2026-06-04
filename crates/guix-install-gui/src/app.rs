@@ -61,6 +61,8 @@ pub enum Message {
     Retry,
     /// Complete screen: reboot the machine.
     Reboot,
+    /// Complete screen: power off the machine.
+    Shutdown,
 }
 
 /// The active prompt plus its in-progress local edit state.
@@ -349,6 +351,10 @@ impl State {
             }
             Message::Reboot => {
                 reboot();
+                Task::none()
+            }
+            Message::Shutdown => {
+                shutdown();
                 Task::none()
             }
         }
@@ -872,7 +878,7 @@ impl State {
         let body = text("Guix System has been installed. You can reboot now.")
             .size(16)
             .color(styles::TEXT);
-        let hint = text("Remove the install medium before rebooting.")
+        let hint = text("Remove the install medium first.")
             .size(13)
             .color(styles::MUTED);
 
@@ -889,8 +895,13 @@ impl State {
             .padding([10, 24])
             .style(styles::btn_primary)
             .on_press(Message::Reboot);
+        let shutdown_btn = button(text("Shut down").size(15))
+            .padding([10, 24])
+            .style(styles::btn_secondary)
+            .on_press(Message::Shutdown);
+        let actions = row![reboot_btn, shutdown_btn].spacing(12);
 
-        let inner = column![card, reboot_btn]
+        let inner = column![card, actions]
             .align_x(Alignment::Center)
             .spacing(16);
 
@@ -1178,6 +1189,21 @@ fn reboot() {
         return;
     }
     let _ = Command::new("shutdown").args(["-r", "now"]).spawn();
+}
+
+/// Power off via whichever command the install env actually has on PATH.
+fn shutdown() {
+    use std::process::Command;
+    if Command::new("poweroff").spawn().is_ok() {
+        return;
+    }
+    if Command::new("/run/current-system/profile/sbin/poweroff")
+        .spawn()
+        .is_ok()
+    {
+        return;
+    }
+    let _ = Command::new("shutdown").args(["-h", "now"]).spawn();
 }
 
 /// Stable subscription identity. The slot is excluded from the hash so the
