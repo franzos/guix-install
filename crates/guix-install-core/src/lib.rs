@@ -1,4 +1,5 @@
 pub mod config;
+pub mod connman;
 pub mod disk;
 pub mod enterprise;
 pub mod exec;
