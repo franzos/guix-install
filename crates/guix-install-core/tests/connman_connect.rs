@@ -24,6 +24,7 @@ fn connect_succeeds_when_state_goes_online() {
         std::env::set_var("GUIX_INSTALL_CONNMANCTL", fake());
         std::env::set_var("GUIX_INSTALL_CONNMAN_DIR", &dir);
         std::env::set_var("FAKE_STATE", "online");
+        std::env::remove_var("FAKE_CONNECT_EXIT");
     }
     let pw = Zeroizing::new("hunter2".to_string());
     let r = connect_with_deadline(
@@ -43,6 +44,7 @@ fn connect_times_out_when_never_connected() {
     unsafe {
         std::env::set_var("GUIX_INSTALL_CONNMANCTL", fake());
         std::env::set_var("FAKE_STATE", "idle");
+        std::env::remove_var("FAKE_CONNECT_EXIT");
     }
     let r = connect_with_deadline(
         "wifi_x_managed_psk",
@@ -50,6 +52,26 @@ fn connect_times_out_when_never_connected() {
         None,
         Duration::from_millis(1500),
     );
+    assert!(r.is_err());
+}
+
+#[test]
+fn connect_errors_when_connect_fails_and_never_ready() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        std::env::set_var("GUIX_INSTALL_CONNMANCTL", fake());
+        std::env::set_var("FAKE_STATE", "idle");
+        std::env::set_var("FAKE_CONNECT_EXIT", "1");
+    }
+    let r = connect_with_deadline(
+        "wifi_x_managed_psk",
+        "Net",
+        None,
+        std::time::Duration::from_millis(800),
+    );
+    unsafe {
+        std::env::remove_var("FAKE_CONNECT_EXIT");
+    }
     assert!(r.is_err());
 }
 

@@ -217,18 +217,27 @@ fn provision_file() -> String {
     format!("{}/guix-install.config", provision_dir())
 }
 
+fn strip_control(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
+
 /// Render a connman provisioning file body binding an SSID + passphrase.
+/// `name`/`path` come from scan results (attacker-influenced SSIDs), so control
+/// characters are stripped to prevent INI line/section injection.
 pub(crate) fn render_provisioning(path: &str, name: &str, passphrase: &str) -> String {
+    let path = strip_control(path);
+    let name = strip_control(name);
     format!("[service_{path}]\nType = wifi\nName = {name}\nPassphrase = {passphrase}\n")
 }
 
-/// Removes the provisioning file on drop (also on error paths).
+/// Removes the provisioning file (and any leftover tmp) on drop — all paths.
 struct ProvisionGuard {
     file: String,
 }
 impl Drop for ProvisionGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.file);
+        let _ = std::fs::remove_file(format!("{}.tmp", self.file));
     }
 }
 
@@ -253,28 +262,29 @@ pub(crate) fn connect_with_deadline(
         }
 
         let file = provision_file();
+        let guard = ProvisionGuard { file: file.clone() };
         std::fs::create_dir_all(provision_dir()).ok();
+        let tmp = format!("{file}.tmp");
         let body = render_provisioning(path, name, pw);
         let mut f = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .mode(0o600)
-            .open(&file)?;
+            .open(&tmp)?;
         f.write_all(body.as_bytes())?;
         f.sync_all().ok();
-        Some(ProvisionGuard { file })
+        drop(f);
+        std::fs::rename(&tmp, &file)?; // atomic publish so connman never sees a partial file
+        Some(guard)
     } else {
         None
     };
 
     let deadline = Instant::now() + timeout;
-    if let Err(e) = cc(&["connect", path]) {
-        // connmanctl `connect` may exit non-zero yet still come up; let the poll
-        // decide, but surface the original error if it never connects.
-        return poll_connected(deadline)
-            .map_err(|poll_err| e.context(format!("connect poll also failed: {poll_err}")));
-    }
+    // connmanctl `connect` can exit non-zero yet still associate; its failure is
+    // already in the installer log. Let the poll decide and surface its message.
+    let _ = cc(&["connect", path]);
     poll_connected(deadline)
 }
 
@@ -350,5 +360,15 @@ mod tests {
         assert!(body.contains("Type = wifi"));
         assert!(body.contains("Name = My Net"));
         assert!(body.contains("Passphrase = secret"));
+    }
+
+    #[test]
+    fn provisioning_strips_control_chars() {
+        let body = render_provisioning("wifi_x\r_evil", "Net\nPassphrase = injected", "pw");
+        assert!(!body.contains('\r'));
+        assert_eq!(
+            body.lines().filter(|l| l.starts_with("Passphrase")).count(),
+            1
+        );
     }
 }
