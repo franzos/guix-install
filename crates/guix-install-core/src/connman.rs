@@ -1,6 +1,12 @@
 //! Wrapper over `connmanctl` — mirrors gnu/installer/connman.scm.
 //! Every invocation forces `LANG=C LC_ALL=C` so parsing is locale-stable.
 
+use std::time::{Duration, Instant};
+
+use anyhow::{Result, bail};
+
+use crate::exec::{self, CommandResult};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tech {
     Wifi,
@@ -8,7 +14,6 @@ pub enum Tech {
 }
 
 impl Tech {
-    #[allow(dead_code)]
     fn as_str(self) -> &'static str {
         match self {
             Tech::Wifi => "wifi",
@@ -112,4 +117,131 @@ pub fn parse_services(stdout: &str) -> Vec<Service> {
         });
     }
     out
+}
+
+fn connmanctl_bin() -> String {
+    std::env::var("GUIX_INSTALL_CONNMANCTL").unwrap_or_else(|_| "connmanctl".into())
+}
+
+/// Run `connmanctl <args>` with a forced C locale (connman.scm:164).
+fn cc(args: &[&str]) -> Result<CommandResult> {
+    let bin = connmanctl_bin();
+    let mut full: Vec<&str> = vec!["env", "LANG=C", "LC_ALL=C", bin.as_str()];
+    full.extend_from_slice(args);
+    exec::run_cmd(&full)
+}
+
+/// Overall connectivity (`connmanctl state`). Errors if the daemon is absent.
+pub fn state() -> Result<LinkState> {
+    Ok(parse_state(&cc(&["state"])?.stdout))
+}
+
+/// Available Wi-Fi/ethernet services (`connmanctl services`).
+pub fn services() -> Result<Vec<Service>> {
+    Ok(parse_services(&cc(&["services"])?.stdout))
+}
+
+/// Power on a technology and wait (bounded) for `Powered = True`.
+///
+/// Distinguishes a hardware/rfkill block (`Available = False`) from a transient
+/// power-up delay so the caller can show an actionable message.
+pub fn enable(tech: Tech) -> Result<()> {
+    // Idempotent: "Already enabled" exits non-zero — ignore it.
+    let _ = cc(&["enable", tech.as_str()]);
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if Instant::now() >= deadline {
+            bail!("{} did not power on within 10s", tech.as_str());
+        }
+        let techs = cc(&["technologies"])?.stdout;
+        let (available, powered) = technology_flags(&techs, tech);
+        if !available {
+            bail!("{} is hardware-disabled (check the physical switch / rfkill)", tech.as_str());
+        }
+        if powered {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// Trigger a scan round (`connmanctl scan wifi`); blocks until the round ends.
+pub fn scan(tech: Tech) -> Result<()> {
+    cc(&["scan", tech.as_str()]).map(|_| ())
+}
+
+/// Parse `connmanctl technologies` for one technology's Available/Powered flags.
+/// The block for a technology starts at `/net/connman/technology/<tech>` and its
+/// properties are indented `Key = Value` lines until the next block.
+pub(crate) fn technology_flags(stdout: &str, tech: Tech) -> (bool, bool) {
+    let marker = format!("/technology/{}", tech.as_str());
+    let mut in_block = false;
+    let mut available = false;
+    let mut powered = false;
+    let mut saw_available = false;
+    for line in stdout.lines() {
+        if line.starts_with('/') {
+            in_block = line.contains(&marker);
+            continue;
+        }
+        if in_block {
+            let l = line.trim();
+            if let Some(v) = l.strip_prefix("Powered =") {
+                powered = v.trim() == "True";
+            } else if let Some(v) = l.strip_prefix("Available =") {
+                available = v.trim() == "True";
+                saw_available = true;
+            }
+        }
+    }
+    // connman omits Available when the device is present; default true only if
+    // the target block never stated it.
+    if !saw_available {
+        available = true;
+    }
+    (available, powered)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TECHS: &str = "\
+/net/connman/technology/ethernet
+  Name = Wired
+  Type = ethernet
+  Powered = True
+  Connected = True
+
+/net/connman/technology/wifi
+  Name = WiFi
+  Type = wifi
+  Powered = True
+  Connected = False
+";
+
+    #[test]
+    fn wifi_powered_parsed() {
+        let (available, powered) = technology_flags(TECHS, Tech::Wifi);
+        assert!(available);
+        assert!(powered);
+    }
+
+    #[test]
+    fn rfkill_block_detected() {
+        let blocked = "/net/connman/technology/wifi\n  Powered = False\n  Available = False\n";
+        let (available, powered) = technology_flags(blocked, Tech::Wifi);
+        assert!(!available);
+        assert!(!powered);
+    }
+
+    #[test]
+    fn available_fallback_ignores_other_tech() {
+        let s = "/net/connman/technology/ethernet\n  Available = True\n\n\
+                 /net/connman/technology/wifi\n  Powered = False\n";
+        let (available, powered) = technology_flags(s, Tech::Wifi);
+        assert!(available); // no Available line in wifi block → defaults true
+        assert!(!powered);
+    }
 }
