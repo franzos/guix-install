@@ -15,4 +15,4 @@ guix-install-core = { path = "../guix-install-core" }
 libguix = { version = "0.1.7", default-features = false }
 anyhow.workspace = true
 zeroize.workspace = true
-iced = { version = "0.14", features = ["svg"] }
+iced = { version = "0.14", features = ["svg", "tokio"] }

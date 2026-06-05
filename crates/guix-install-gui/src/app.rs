@@ -63,6 +63,8 @@ pub enum Message {
     Reboot,
     /// Complete screen: power off the machine.
     Shutdown,
+    /// GUI-side timer tick that advances the busy spinner during network waits.
+    SpinnerTick,
 }
 
 /// The active prompt plus its in-progress local edit state.
@@ -152,6 +154,8 @@ pub struct State {
     welcome: bool,
     /// Trimmed tagline pulled from `/etc/issue` at boot (best-effort).
     tagline: String,
+    /// Advances on each `SpinnerTick` while the idle "Working…" view is shown.
+    spinner_frame: usize,
 }
 
 #[derive(Clone)]
@@ -189,6 +193,7 @@ impl State {
             failure: None,
             welcome: true,
             tagline: read_tagline(),
+            spinner_frame: 0,
         };
         (state, focus_input())
     }
@@ -221,7 +226,34 @@ impl State {
         .map(Message::Event);
 
         let keys = iced::keyboard::listen().filter_map(key_message);
-        Subscription::batch([events, keys])
+
+        // Drive the busy spinner only while the idle "Working…" view is on
+        // screen; it auto-stops the moment a prompt or any other screen takes
+        // over. The worker thread blocks on sync network calls, but iced's
+        // event loop and this timer run independently, so motion continues.
+        let spinner = if self.is_working() {
+            iced::time::every(std::time::Duration::from_millis(120)).map(|_| Message::SpinnerTick)
+        } else {
+            Subscription::none()
+        };
+
+        Subscription::batch([events, keys, spinner])
+    }
+
+    /// True exactly when `view_content` falls through to the idle `Active::None`
+    /// "Working…" arm — mirrors every early-return guard in `view_content` plus
+    /// the `Active::None if self.finished` ("Done") split.
+    fn is_working(&self) -> bool {
+        let welcome = self.welcome && self.install.is_none() && self.failure.is_none();
+        let editing = matches!(self.active, Active::Edit { .. });
+        let summary = self.current_step == StepId::Summary && self.has_summary_prompt();
+        !welcome
+            && !editing
+            && self.failure.is_none()
+            && self.install.is_none()
+            && !summary
+            && matches!(self.active, Active::None)
+            && !self.finished
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -355,6 +387,10 @@ impl State {
             }
             Message::Shutdown => {
                 shutdown();
+                Task::none()
+            }
+            Message::SpinnerTick => {
+                self.spinner_frame = self.spinner_frame.wrapping_add(1);
                 Task::none()
             }
         }
@@ -630,7 +666,20 @@ impl State {
                 };
                 ("Done".to_string(), text(msg).size(15).into())
             }
-            Active::None => ("Working\u{2026}".to_string(), Space::new().into()),
+            Active::None => {
+                const FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
+                let spinner = FRAMES[self.spinner_frame % FRAMES.len()];
+                let status = self.log.last().map(String::as_str).unwrap_or("");
+                let body = column![
+                    text(format!("{spinner}  Working\u{2026}"))
+                        .size(18)
+                        .color(styles::PRIMARY),
+                    text(status.to_string()).size(13).color(styles::MUTED),
+                ]
+                .spacing(8)
+                .into();
+                (String::new(), body)
+            }
             Active::Select {
                 prompt,
                 options,
