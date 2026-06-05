@@ -88,6 +88,7 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
                 let r = step_mode(ui, &mut config)?;
                 if config.mode != old_mode {
                     nav.reset_for_mode(&config.mode);
+                    came_from_back = false;
                     continue;
                 }
                 r
