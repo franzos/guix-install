@@ -97,13 +97,15 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
         let index = match ui.select("Connect to a network", &label_refs, 0) {
             Ok(i) => i,
             Err(e) if is_cancelled(&e) => {
-                if ui.confirm(
+                match ui.confirm(
                     "Continue without a network? guix pull/init will likely fail.",
                     false,
-                )? {
-                    return Ok(());
+                ) {
+                    Ok(true) => return Ok(()),
+                    Ok(false) => continue,
+                    Err(e) if is_cancelled(&e) => continue,
+                    Err(e) => return Err(e),
                 }
-                continue;
             }
             Err(e) => return Err(e),
         };
@@ -115,13 +117,15 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
                 continue;
             }
             Selection::Action(NetworkAction::Skip) => {
-                if ui.confirm(
+                match ui.confirm(
                     "Continue without a network? guix pull/init will likely fail.",
                     false,
-                )? {
-                    return Ok(());
+                ) {
+                    Ok(true) => return Ok(()),
+                    Ok(false) => continue,
+                    Err(e) if is_cancelled(&e) => continue,
+                    Err(e) => return Err(e),
                 }
-                continue;
             }
             Selection::Network(i) => {
                 let svc = &wifi[i];

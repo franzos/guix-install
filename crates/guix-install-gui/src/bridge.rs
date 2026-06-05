@@ -281,7 +281,7 @@ impl UserInterface for IcedUi {
                 current: i == current,
             })
             .collect();
-        let current_step = steps.get(current).copied().unwrap_or(StepId::Mode);
+        let current_step = steps.get(current).copied().unwrap_or(StepId::Network);
         self.send(UiEvent::Rail {
             entries,
             current: current_step,

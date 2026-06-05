@@ -178,7 +178,7 @@ impl State {
             retry,
             events: Arc::new(Mutex::new(Some(events))),
             rail: Vec::new(),
-            current_step: StepId::Mode,
+            current_step: StepId::Network,
             active: Active::None,
             log: Vec::new(),
             summary: Vec::new(),
