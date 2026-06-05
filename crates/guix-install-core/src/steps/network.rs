@@ -4,6 +4,7 @@ use crate::connman;
 use crate::network;
 use crate::steps::StepResult;
 use crate::ui::UserInterface;
+use crate::ui_or_back;
 
 /// Auto-skip only on forward entry while actually reachable. A deliberate Back
 /// always renders the step so the user can change networks.
@@ -26,7 +27,7 @@ pub fn step_network(ui: &mut dyn UserInterface, came_from_back: bool) -> Result<
     };
     if connected && reachable {
         ui.info("Network connected ✓");
-        if ui.confirm("Connected. Continue? (No = change network)", true)? {
+        if ui_or_back!(ui.confirm("Connected. Continue? (No = change network)", true)) {
             return Ok(StepResult::Next);
         }
     }
