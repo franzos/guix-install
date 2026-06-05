@@ -5,6 +5,7 @@ pub mod encryption;
 pub mod hostname;
 pub mod locale;
 pub mod mode;
+pub mod network;
 pub mod summary;
 pub mod timezone;
 pub mod users;
