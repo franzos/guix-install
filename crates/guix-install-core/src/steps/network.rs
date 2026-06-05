@@ -3,8 +3,7 @@ use anyhow::Result;
 use crate::connman;
 use crate::network;
 use crate::steps::StepResult;
-use crate::ui::UserInterface;
-use crate::ui_or_back;
+use crate::ui::{UserInterface, is_cancelled};
 
 /// Auto-skip only on forward entry while actually reachable. A deliberate Back
 /// always renders the step so the user can change networks.
@@ -13,21 +12,24 @@ pub fn should_autoskip(came_from_back: bool, reachable: bool) -> bool {
 }
 
 pub fn step_network(ui: &mut dyn UserInterface, came_from_back: bool) -> Result<StepResult> {
+    ui.info("Checking network connection…");
     let reachable = network::reachable();
     if should_autoskip(came_from_back, reachable) {
         return Ok(StepResult::Next);
     }
 
-    let connected = match connman::state() {
-        Ok(s) => s.is_connected(),
-        Err(e) => {
-            ui.warn(&format!("Could not query network state: {e}"));
-            false
-        }
-    };
-    if connected && reachable {
+    // Online if substitutes are reachable OR connman reports a connected service.
+    // The single reachable() probe can flake, so don't dead-end an online user.
+    let online = reachable || connman::state().map(|s| s.is_connected()).unwrap_or(false);
+
+    if online {
         ui.info("Network connected ✓");
-        if ui_or_back!(ui.confirm("Connected. Continue? (No = change network)", true)) {
+        let choice = match ui.select("Network", &["Continue", "Change network…"], 0) {
+            Ok(i) => i,
+            Err(e) if is_cancelled(&e) => 0, // Escape = Continue (already online)
+            Err(e) => return Err(e),
+        };
+        if choice == 0 {
             return Ok(StepResult::Next);
         }
     }

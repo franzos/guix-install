@@ -50,7 +50,7 @@ pub fn build_menu(wifi: &[Service]) -> Vec<String> {
         })
         .collect();
     labels.push("⟳ Rescan".to_string());
-    labels.push("Ethernet (plug in cable)".to_string());
+    labels.push("Check wired connection".to_string());
     labels.push("Continue without network".to_string());
     labels
 }
@@ -72,23 +72,36 @@ pub fn resolve_selection(index: usize, wifi_count: usize) -> Selection {
 /// user is connected or explicitly continues without a network.
 pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
     loop {
-        if let Err(e) = connman::enable(Tech::Wifi) {
-            ui.warn(&format!("{e}"));
-        }
-        if let Err(e) = connman::scan(Tech::Wifi) {
-            ui.warn(&format!("Wi-Fi scan failed: {e}"));
-        }
+        // Assume present on probe error so a transient connmanctl hiccup doesn't
+        // hide the Wi-Fi path entirely.
+        let has_wifi = connman::has_technology(Tech::Wifi).unwrap_or(true);
 
-        let services = connman::services().unwrap_or_default();
-        let wifi: Vec<Service> = services
-            .into_iter()
-            .filter(|s| s.tech == Tech::Wifi)
-            .collect();
-        if wifi.is_empty() {
+        let wifi: Vec<Service> = if has_wifi {
+            ui.info("Enabling Wi-Fi…");
+            if let Err(e) = connman::enable(Tech::Wifi) {
+                ui.warn(&format!("{e}"));
+            }
+            ui.info("Scanning for Wi-Fi networks…");
+            if let Err(e) = connman::scan(Tech::Wifi) {
+                ui.warn(&format!("Wi-Fi scan failed: {e}"));
+            }
+            let wifi: Vec<Service> = connman::services()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|s| s.tech == Tech::Wifi)
+                .collect();
+            if wifi.is_empty() {
+                ui.warn(
+                    "No Wi-Fi networks found — check the router is on and in range, then ⟳ Rescan.",
+                );
+            }
+            wifi
+        } else {
             ui.warn(
-                "No Wi-Fi networks found — check the router is on and in range, then ⟳ Rescan.",
+                "No Wi-Fi adapter detected (or its driver isn't loaded). Use a wired connection.",
             );
-        }
+            Vec::new()
+        };
 
         let labels = build_menu(&wifi);
         let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
@@ -113,7 +126,12 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
         match resolve_selection(index, wifi.len()) {
             Selection::Action(NetworkAction::Rescan) => continue,
             Selection::Action(NetworkAction::Ethernet) => {
-                ui.info("Plug in your Ethernet cable, then choose ⟳ Rescan.");
+                ui.info("Checking wired connection…");
+                if reachable() {
+                    ui.info("Network connected ✓");
+                    return Ok(());
+                }
+                ui.warn("No connection detected. Plug in the Ethernet cable, then choose ⟳ Rescan.");
                 continue;
             }
             Selection::Action(NetworkAction::Skip) => {

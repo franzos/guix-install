@@ -175,6 +175,20 @@ pub fn scan(tech: Tech) -> Result<()> {
     cc(&["scan", tech.as_str()]).map(|_| ())
 }
 
+/// True if `stdout` contains a technology block path line for `tech`.
+pub(crate) fn lists_technology(stdout: &str, tech: Tech) -> bool {
+    let marker = format!("/technology/{}", tech.as_str());
+    stdout
+        .lines()
+        .any(|l| l.starts_with('/') && l.contains(&marker))
+}
+
+/// Whether connman lists a technology block for `tech` at all (i.e. the hardware
+/// + driver is present). Distinguishes "no Wi-Fi adapter" from "Wi-Fi off".
+pub fn has_technology(tech: Tech) -> Result<bool> {
+    Ok(lists_technology(&cc(&["technologies"])?.stdout, tech))
+}
+
 /// Parse `connmanctl technologies` for one technology's Available/Powered flags.
 /// The block for a technology starts at `/net/connman/technology/<tech>` and its
 /// properties are indented `Key = Value` lines until the next block.
@@ -351,6 +365,13 @@ mod tests {
         let (available, powered) = technology_flags(s, Tech::Wifi);
         assert!(available); // no Available line in wifi block → defaults true
         assert!(!powered);
+    }
+
+    #[test]
+    fn has_technology_detects_presence() {
+        let only_eth = "/net/connman/technology/ethernet\n  Powered = True\n";
+        assert!(lists_technology(only_eth, Tech::Ethernet));
+        assert!(!lists_technology(only_eth, Tech::Wifi));
     }
 
     #[test]
