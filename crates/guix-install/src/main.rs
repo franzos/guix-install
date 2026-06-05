@@ -10,10 +10,10 @@ use guix_install_core::config::{
 };
 use guix_install_core::disk::detect::{detect_block_devices, format_device};
 use guix_install_core::mode::InstallMode;
+use guix_install_core::network;
 use guix_install_core::run;
 use guix_install_core::scheme::channels::render_channels;
 use guix_install_core::scheme::operating_system::render_operating_system;
-use guix_install_core::wifi;
 
 use repl::Repl;
 
@@ -238,7 +238,8 @@ fn main() -> Result<()> {
             }
         }
         Some(Commands::Wifi) => {
-            wifi::wifi_connect()?;
+            let mut ui = Repl::new();
+            network::connect_flow(&mut ui)?;
         }
         None => {
             if cli.dry_run {

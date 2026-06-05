@@ -16,4 +16,3 @@ pub mod run;
 pub mod scheme;
 pub mod steps;
 pub mod ui;
-pub mod wifi;

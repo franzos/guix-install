@@ -8,7 +8,10 @@ use zeroize::Zeroizing;
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn fake() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/connmanctl-fake.sh")
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/connmanctl-fake.sh"
+    )
 }
 
 #[test]
@@ -23,7 +26,12 @@ fn connect_succeeds_when_state_goes_online() {
         std::env::set_var("FAKE_STATE", "online");
     }
     let pw = Zeroizing::new("hunter2".to_string());
-    let r = connect_with_deadline("wifi_x_managed_psk", "Net", Some(&pw), Duration::from_secs(2));
+    let r = connect_with_deadline(
+        "wifi_x_managed_psk",
+        "Net",
+        Some(&pw),
+        Duration::from_secs(2),
+    );
     assert!(r.is_ok(), "expected success, got {r:?}");
     // provisioning file must be cleaned up
     assert!(!dir.join("guix-install.config").exists());
@@ -36,7 +44,12 @@ fn connect_times_out_when_never_connected() {
         std::env::set_var("GUIX_INSTALL_CONNMANCTL", fake());
         std::env::set_var("FAKE_STATE", "idle");
     }
-    let r = connect_with_deadline("wifi_x_managed_psk", "Net", None, Duration::from_millis(1500));
+    let r = connect_with_deadline(
+        "wifi_x_managed_psk",
+        "Net",
+        None,
+        Duration::from_millis(1500),
+    );
     assert!(r.is_err());
 }
 

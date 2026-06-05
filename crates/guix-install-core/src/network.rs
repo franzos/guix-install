@@ -80,9 +80,14 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
         }
 
         let services = connman::services().unwrap_or_default();
-        let wifi: Vec<Service> = services.into_iter().filter(|s| s.tech == Tech::Wifi).collect();
+        let wifi: Vec<Service> = services
+            .into_iter()
+            .filter(|s| s.tech == Tech::Wifi)
+            .collect();
         if wifi.is_empty() {
-            ui.warn("No Wi-Fi networks found — check the router is on and in range, then ⟳ Rescan.");
+            ui.warn(
+                "No Wi-Fi networks found — check the router is on and in range, then ⟳ Rescan.",
+            );
         }
 
         let labels = build_menu(&wifi);
@@ -92,7 +97,10 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
         let index = match ui.select("Connect to a network", &label_refs, 0) {
             Ok(i) => i,
             Err(e) if is_cancelled(&e) => {
-                if ui.confirm("Continue without a network? guix pull/init will likely fail.", false)? {
+                if ui.confirm(
+                    "Continue without a network? guix pull/init will likely fail.",
+                    false,
+                )? {
                     return Ok(());
                 }
                 continue;
@@ -107,7 +115,10 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
                 continue;
             }
             Selection::Action(NetworkAction::Skip) => {
-                if ui.confirm("Continue without a network? guix pull/init will likely fail.", false)? {
+                if ui.confirm(
+                    "Continue without a network? guix pull/init will likely fail.",
+                    false,
+                )? {
                     return Ok(());
                 }
                 continue;
@@ -174,8 +185,17 @@ mod tests {
     fn selection_resolution() {
         assert_eq!(resolve_selection(0, 2), Selection::Network(0));
         assert_eq!(resolve_selection(1, 2), Selection::Network(1));
-        assert_eq!(resolve_selection(2, 2), Selection::Action(NetworkAction::Rescan));
-        assert_eq!(resolve_selection(3, 2), Selection::Action(NetworkAction::Ethernet));
-        assert_eq!(resolve_selection(4, 2), Selection::Action(NetworkAction::Skip));
+        assert_eq!(
+            resolve_selection(2, 2),
+            Selection::Action(NetworkAction::Rescan)
+        );
+        assert_eq!(
+            resolve_selection(3, 2),
+            Selection::Action(NetworkAction::Ethernet)
+        );
+        assert_eq!(
+            resolve_selection(4, 2),
+            Selection::Action(NetworkAction::Skip)
+        );
     }
 }

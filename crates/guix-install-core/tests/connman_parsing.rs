@@ -10,15 +10,24 @@ const SERVICES: &str = "\
 
 #[test]
 fn parses_state_values() {
-    assert_eq!(parse_state("  State = online\n  OfflineMode = False\n"), LinkState::Online);
+    assert_eq!(
+        parse_state("  State = online\n  OfflineMode = False\n"),
+        LinkState::Online
+    );
     assert_eq!(parse_state("  State = ready\n"), LinkState::Ready);
     assert_eq!(parse_state("  State = idle\n"), LinkState::Idle);
     assert_eq!(parse_state("  State = offline\n"), LinkState::Disconnect);
     assert_eq!(parse_state("garbage"), LinkState::Unknown);
     assert_eq!(parse_state("  State = failure\n"), LinkState::Failure);
     assert_eq!(parse_state("  State = disconnect\n"), LinkState::Disconnect);
-    assert_eq!(parse_state("  State = association\n"), LinkState::Association);
-    assert_eq!(parse_state("  State = configuration\n"), LinkState::Association);
+    assert_eq!(
+        parse_state("  State = association\n"),
+        LinkState::Association
+    );
+    assert_eq!(
+        parse_state("  State = configuration\n"),
+        LinkState::Association
+    );
 }
 
 #[test]

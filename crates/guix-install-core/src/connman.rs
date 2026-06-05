@@ -158,7 +158,10 @@ pub fn enable(tech: Tech) -> Result<()> {
         let techs = cc(&["technologies"])?.stdout;
         let (available, powered) = technology_flags(&techs, tech);
         if !available {
-            bail!("{} is hardware-disabled (check the physical switch / rfkill)", tech.as_str());
+            bail!(
+                "{} is hardware-disabled (check the physical switch / rfkill)",
+                tech.as_str()
+            );
         }
         if powered {
             return Ok(());
