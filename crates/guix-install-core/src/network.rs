@@ -2,7 +2,10 @@
 
 use std::time::Duration;
 
-use crate::connman::Service;
+use anyhow::Result;
+
+use crate::connman::{self, Service, Tech};
+use crate::ui::{UserInterface, is_cancelled};
 
 const SUBSTITUTE_PROBE_URL: &str = "https://bordeaux.guix.gnu.org/nix-cache-info";
 
@@ -65,10 +68,78 @@ pub fn resolve_selection(index: usize, wifi_count: usize) -> Selection {
     }
 }
 
+/// Interactive connect loop: enable Wi-Fi, scan, list, connect. Returns when the
+/// user is connected or explicitly continues without a network.
+pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
+    loop {
+        if let Err(e) = connman::enable(Tech::Wifi) {
+            ui.warn(&format!("{e}"));
+        }
+        if let Err(e) = connman::scan(Tech::Wifi) {
+            ui.warn(&format!("Wi-Fi scan failed: {e}"));
+        }
+
+        let services = connman::services().unwrap_or_default();
+        let wifi: Vec<Service> = services.into_iter().filter(|s| s.tech == Tech::Wifi).collect();
+        if wifi.is_empty() {
+            ui.warn("No Wi-Fi networks found — check the router is on and in range, then ⟳ Rescan.");
+        }
+
+        let labels = build_menu(&wifi);
+        let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+
+        // Cancel on the top-level menu == "Continue without network" prompt.
+        let index = match ui.select("Connect to a network", &label_refs, 0) {
+            Ok(i) => i,
+            Err(e) if is_cancelled(&e) => {
+                if ui.confirm("Continue without a network? guix pull/init will likely fail.", false)? {
+                    return Ok(());
+                }
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+
+        match resolve_selection(index, wifi.len()) {
+            Selection::Action(NetworkAction::Rescan) => continue,
+            Selection::Action(NetworkAction::Ethernet) => {
+                ui.info("Plug in your Ethernet cable, then choose ⟳ Rescan.");
+                continue;
+            }
+            Selection::Action(NetworkAction::Skip) => {
+                if ui.confirm("Continue without a network? guix pull/init will likely fail.", false)? {
+                    return Ok(());
+                }
+                continue;
+            }
+            Selection::Network(i) => {
+                let svc = &wifi[i];
+                if svc.eap {
+                    ui.warn("Enterprise (802.1x) Wi-Fi isn't supported here — use Ethernet or connect from a shell.");
+                    continue;
+                }
+                let pw = if svc.secured {
+                    match ui.password("Wi-Fi passphrase") {
+                        Ok(p) => Some(p),
+                        Err(e) if is_cancelled(&e) => continue,
+                        Err(e) => return Err(e),
+                    }
+                } else {
+                    None
+                };
+                ui.info(&format!("Connecting to {}…", svc.name));
+                match connman::connect(&svc.path, &svc.name, pw.as_ref()) {
+                    Ok(()) => return Ok(()),
+                    Err(e) => ui.warn(&format!("Couldn't connect: {e}")),
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connman::Tech;
 
     fn svc(name: &str, secured: bool, eap: bool) -> Service {
         Service {
