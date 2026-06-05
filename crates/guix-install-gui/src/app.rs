@@ -39,6 +39,8 @@ pub enum Message {
     /// Pick a select option and submit it immediately (Summary action buttons).
     SubmitIndex(usize),
     InputChanged(String),
+    /// Toggle plaintext visibility of the active password field.
+    ToggleReveal,
     /// Type-to-filter text changed on a long select.
     SelectFilterChanged(String),
     Confirm(bool),
@@ -83,6 +85,7 @@ enum Active {
     Password {
         prompt: String,
         value: String,
+        revealed: bool,
     },
     Confirm {
         prompt: String,
@@ -286,6 +289,12 @@ impl State {
                 }
                 Task::none()
             }
+            Message::ToggleReveal => {
+                if let Active::Password { revealed, .. } = &mut self.active {
+                    *revealed = !*revealed;
+                }
+                Task::none()
+            }
             Message::SelectFilterChanged(s) => {
                 if let Active::Select {
                     options,
@@ -454,6 +463,7 @@ impl State {
                     PromptRequest::Password { prompt } => Active::Password {
                         prompt,
                         value: String::new(),
+                        revealed: false,
                     },
                     PromptRequest::Confirm { prompt, default } => {
                         Active::Confirm { prompt, default }
@@ -687,7 +697,25 @@ impl State {
                 filter,
             } => (prompt.clone(), self.view_select(options, *selected, filter)),
             Active::Input { prompt, value } => (prompt.clone(), self.view_text(value, false)),
-            Active::Password { prompt, value } => (prompt.clone(), self.view_text(value, true)),
+            Active::Password {
+                prompt,
+                value,
+                revealed,
+            } => {
+                let field = text_input("", value)
+                    .id(iced::widget::Id::new(INPUT_ID))
+                    .secure(!revealed)
+                    .on_input(Message::InputChanged)
+                    .on_submit(Message::Next)
+                    .padding(10)
+                    .size(15);
+                let label = if *revealed { "Hide" } else { "Show" };
+                let toggle = button(text(format!("\u{1f441} {label}")).size(13))
+                    .padding([6, 10])
+                    .style(styles::btn_ghost)
+                    .on_press(Message::ToggleReveal);
+                (prompt.clone(), column![field, toggle].spacing(8).into())
+            }
             Active::Confirm { prompt, default } => {
                 let yes = button(text("Yes"))
                     .padding([8, 20])
