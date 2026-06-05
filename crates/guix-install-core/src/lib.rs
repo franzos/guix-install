@@ -8,6 +8,7 @@ pub mod hardware;
 pub mod install;
 pub mod installer_log;
 pub mod mode;
+pub mod network;
 pub mod passwd;
 pub mod progress;
 pub mod resume;
