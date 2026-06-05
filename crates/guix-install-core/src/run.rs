@@ -10,6 +10,7 @@ use crate::steps::encryption::step_encryption;
 use crate::steps::hostname::step_hostname;
 use crate::steps::locale::step_locale;
 use crate::steps::mode::step_mode;
+use crate::steps::network::step_network;
 use crate::steps::summary::step_summary;
 use crate::steps::timezone::step_timezone;
 use crate::steps::users::step_users;
@@ -76,10 +77,12 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
 
     let mut config = SystemConfig::default();
     let mut nav = StepNavigator::new(&config.mode);
+    let mut came_from_back = false;
 
     loop {
         ui.set_steps(nav.steps(), nav.current_index());
         let result = match nav.current() {
+            StepId::Network => step_network(ui, came_from_back)?,
             StepId::Mode => {
                 let old_mode = config.mode.clone();
                 let r = step_mode(ui, &mut config)?;
@@ -104,9 +107,13 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
                 if nav.is_last() {
                     break;
                 }
+                came_from_back = false;
                 nav.advance();
             }
-            StepResult::Back => nav.go_back(),
+            StepResult::Back => {
+                came_from_back = true;
+                nav.go_back();
+            }
             StepResult::Quit => {
                 ui.info("Installation cancelled.");
                 return Ok(());

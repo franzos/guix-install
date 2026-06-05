@@ -5,10 +5,11 @@ use guix_install_core::steps::{StepId, StepNavigator};
 fn panther_includes_all_steps() {
     let nav = StepNavigator::new(&InstallMode::Panther);
     let steps = nav.steps();
-    assert_eq!(steps.len(), 9);
+    assert_eq!(steps.len(), 10);
     assert_eq!(
         steps,
         &[
+            StepId::Network,
             StepId::Mode,
             StepId::Locale,
             StepId::Timezone,
@@ -25,13 +26,13 @@ fn panther_includes_all_steps() {
 #[test]
 fn guix_includes_all_steps() {
     let nav = StepNavigator::new(&InstallMode::Guix);
-    assert_eq!(nav.steps().len(), 9);
+    assert_eq!(nav.steps().len(), 10);
 }
 
 #[test]
 fn nonguix_includes_all_steps() {
     let nav = StepNavigator::new(&InstallMode::Nonguix);
-    assert_eq!(nav.steps().len(), 9);
+    assert_eq!(nav.steps().len(), 10);
 }
 
 #[test]
@@ -43,10 +44,11 @@ fn enterprise_skips_config_steps() {
     let nav = StepNavigator::new(&mode);
     let steps = nav.steps();
 
-    assert_eq!(steps.len(), 4);
+    assert_eq!(steps.len(), 5);
     assert_eq!(
         steps,
         &[
+            StepId::Network,
             StepId::Mode,
             StepId::Disk,
             StepId::Encryption,
@@ -64,6 +66,9 @@ fn enterprise_skips_config_steps() {
 #[test]
 fn advance_walks_forward() {
     let mut nav = StepNavigator::new(&InstallMode::Panther);
+    assert_eq!(nav.current(), StepId::Network);
+
+    nav.advance();
     assert_eq!(nav.current(), StepId::Mode);
 
     nav.advance();
@@ -74,37 +79,34 @@ fn advance_walks_forward() {
 
     nav.advance();
     assert_eq!(nav.current(), StepId::Hostname);
-
-    nav.advance();
-    assert_eq!(nav.current(), StepId::Disk);
 }
 
 #[test]
 fn go_back_walks_backward() {
     let mut nav = StepNavigator::new(&InstallMode::Panther);
+    nav.advance(); // Mode
     nav.advance(); // Locale
     nav.advance(); // Timezone
-    nav.advance(); // Hostname
-
-    nav.go_back();
-    assert_eq!(nav.current(), StepId::Timezone);
 
     nav.go_back();
     assert_eq!(nav.current(), StepId::Locale);
 
     nav.go_back();
     assert_eq!(nav.current(), StepId::Mode);
+
+    nav.go_back();
+    assert_eq!(nav.current(), StepId::Network);
 }
 
 #[test]
 fn go_back_at_first_step_stays() {
     let mut nav = StepNavigator::new(&InstallMode::Panther);
     assert!(nav.is_first());
-    assert_eq!(nav.current(), StepId::Mode);
+    assert_eq!(nav.current(), StepId::Network);
 
     nav.go_back();
     assert!(nav.is_first());
-    assert_eq!(nav.current(), StepId::Mode);
+    assert_eq!(nav.current(), StepId::Network);
 }
 
 #[test]
@@ -130,7 +132,7 @@ fn is_first_is_last_correct() {
     assert!(!nav.is_last());
 
     // Walk to the last step
-    for _ in 0..8 {
+    for _ in 0..9 {
         nav.advance();
     }
 
@@ -141,11 +143,11 @@ fn is_first_is_last_correct() {
 #[test]
 fn reset_for_mode_rebuilds_to_enterprise() {
     let mut nav = StepNavigator::new(&InstallMode::Panther);
-    assert_eq!(nav.steps().len(), 9);
+    assert_eq!(nav.steps().len(), 10);
 
     nav.advance();
     nav.advance();
-    assert_eq!(nav.current(), StepId::Timezone);
+    assert_eq!(nav.current(), StepId::Locale);
 
     let enterprise = InstallMode::Enterprise {
         config_id: "abc".into(),
@@ -153,8 +155,8 @@ fn reset_for_mode_rebuilds_to_enterprise() {
     };
     nav.reset_for_mode(&enterprise);
 
-    assert_eq!(nav.steps().len(), 4);
-    // After reset, position is at index 1 (Disk)
+    assert_eq!(nav.steps().len(), 5);
+    // After reset, position is at index 2 (Disk)
     assert_eq!(nav.current(), StepId::Disk);
 }
 
@@ -165,10 +167,10 @@ fn reset_for_mode_rebuilds_back_to_full() {
         config_url: "https://example.com".into(),
     };
     let mut nav = StepNavigator::new(&enterprise);
-    assert_eq!(nav.steps().len(), 4);
+    assert_eq!(nav.steps().len(), 5);
 
     nav.reset_for_mode(&InstallMode::Panther);
-    assert_eq!(nav.steps().len(), 9);
+    assert_eq!(nav.steps().len(), 10);
     assert_eq!(nav.current(), StepId::Locale);
 }
 
@@ -180,6 +182,8 @@ fn enterprise_advance_through_all() {
     };
     let mut nav = StepNavigator::new(&mode);
 
+    assert_eq!(nav.current(), StepId::Network);
+    nav.advance();
     assert_eq!(nav.current(), StepId::Mode);
     nav.advance();
     assert_eq!(nav.current(), StepId::Disk);
