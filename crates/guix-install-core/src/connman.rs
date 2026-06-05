@@ -4,6 +4,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
+use zeroize::Zeroizing;
 
 use crate::exec::{self, CommandResult};
 
@@ -203,6 +204,100 @@ pub(crate) fn technology_flags(stdout: &str, tech: Tech) -> (bool, bool) {
     (available, powered)
 }
 
+const DEFAULT_PROVISION_DIR: &str = "/var/lib/connman";
+
+fn provision_dir() -> String {
+    std::env::var("GUIX_INSTALL_CONNMAN_DIR").unwrap_or_else(|_| DEFAULT_PROVISION_DIR.into())
+}
+
+fn provision_file() -> String {
+    format!("{}/guix-install.config", provision_dir())
+}
+
+/// Render a connman provisioning file body binding an SSID + passphrase.
+pub(crate) fn render_provisioning(path: &str, name: &str, passphrase: &str) -> String {
+    format!("[service_{path}]\nType = wifi\nName = {name}\nPassphrase = {passphrase}\n")
+}
+
+/// Removes the provisioning file on drop (also on error paths).
+struct ProvisionGuard {
+    file: String,
+}
+impl Drop for ProvisionGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.file);
+    }
+}
+
+/// Connect to a service. For secured networks, writes a 0600 provisioning file
+/// (passphrase never goes on the argv), triggers connect, polls until connected.
+pub fn connect(path: &str, name: &str, passphrase: Option<&Zeroizing<String>>) -> Result<()> {
+    connect_with_deadline(path, name, passphrase, Duration::from_secs(30))
+}
+
+pub(crate) fn connect_with_deadline(
+    path: &str,
+    name: &str,
+    passphrase: Option<&Zeroizing<String>>,
+    timeout: Duration,
+) -> Result<()> {
+    let _guard: Option<ProvisionGuard> = if let Some(pw) = passphrase {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        if pw.contains('\n') || pw.contains('\r') {
+            bail!("Wi-Fi passphrase contains invalid characters");
+        }
+
+        let file = provision_file();
+        std::fs::create_dir_all(provision_dir()).ok();
+        let body = render_provisioning(path, name, pw);
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&file)?;
+        f.write_all(body.as_bytes())?;
+        f.sync_all().ok();
+        Some(ProvisionGuard { file })
+    } else {
+        None
+    };
+
+    let deadline = Instant::now() + timeout;
+    if let Err(e) = cc(&["connect", path]) {
+        // connmanctl `connect` may exit non-zero yet still come up; let the poll
+        // decide, but surface the original error if it never connects.
+        return poll_connected(deadline)
+            .map_err(|poll_err| e.context(format!("connect poll also failed: {poll_err}")));
+    }
+    poll_connected(deadline)
+}
+
+fn poll_connected(deadline: Instant) -> Result<()> {
+    loop {
+        if state()?.is_connected() {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            bail!("connection timed out — check signal and passphrase");
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// Test-only public alias for the deadline-parameterised connect. Not stable API.
+#[doc(hidden)]
+pub fn connect_with_deadline_pub(
+    path: &str,
+    name: &str,
+    passphrase: Option<&Zeroizing<String>>,
+    timeout: Duration,
+) -> Result<()> {
+    connect_with_deadline(path, name, passphrase, timeout)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,5 +338,14 @@ mod tests {
         let (available, powered) = technology_flags(s, Tech::Wifi);
         assert!(available); // no Available line in wifi block → defaults true
         assert!(!powered);
+    }
+
+    #[test]
+    fn provisioning_body() {
+        let body = render_provisioning("wifi_x_managed_psk", "My Net", "secret");
+        assert!(body.contains("[service_wifi_x_managed_psk]"));
+        assert!(body.contains("Type = wifi"));
+        assert!(body.contains("Name = My Net"));
+        assert!(body.contains("Passphrase = secret"));
     }
 }
