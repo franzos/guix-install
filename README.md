@@ -68,7 +68,7 @@ chmod +x guix-install
 ./guix-install
 ```
 
-Walks through Mode → Locale → Timezone → Hostname → Disk → Encryption → Users → Desktop → Summary. Escape goes back a step. Enterprise mode collapses the middle to just Disk + Encryption.
+Walks through Keyboard → Network → Mode → Locale → Timezone → Hostname → Disk → Encryption → Users → Desktop → Summary. Escape goes back a step. The Network step (Ethernet/Wi-Fi via connmanctl) auto-skips once a substitute server is reachable. Enterprise mode collapses the middle to just Disk + Encryption.
 
 <p align="center">
   <img src="assets/installer-summary.png" alt="Installation summary screen" width="720">
@@ -110,7 +110,7 @@ guix-install wifi          # connmanctl WiFi setup
 
 ## Graphical installer
 
-`guix-install-gui` is the same installer with an iced frontend instead of the REPL — same modes, same steps, same 8-phase pipeline, same generated `system.scm`. It's keyboard-first (Tab/arrows/Enter/Esc; the pointer is optional), with a left step rail and a live progress screen for the install phases.
+`guix-install-gui` is the same installer with an iced frontend instead of the REPL — same modes, same steps, same 8-phase pipeline, same generated `system.scm`. It's keyboard-first (Tab/arrows/Enter/Esc; the pointer is optional), with a left step rail and a live progress screen for the install phases. The first step picks a keyboard layout and applies it live (by relaunching the compositor), so the rest of the interview is typed on the right keymap.
 
 <p align="center">
   <img src="assets/installer-gui.png" alt="Graphical installer — Install progress screen" width="720">

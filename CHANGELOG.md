@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.5] - 2026-06-06
 
 ### Added
 - Network connection step (Ethernet/Wi-Fi via connmanctl) in both CLI and GUI installers; auto-skips when a substitute server is already reachable.

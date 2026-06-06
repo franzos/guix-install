@@ -131,7 +131,9 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
                     ui.info("Network connected ✓");
                     return Ok(());
                 }
-                ui.warn("No connection detected. Plug in the Ethernet cable, then choose ⟳ Rescan.");
+                ui.warn(
+                    "No connection detected. Plug in the Ethernet cable, then choose ⟳ Rescan.",
+                );
                 continue;
             }
             Selection::Action(NetworkAction::Skip) => {
