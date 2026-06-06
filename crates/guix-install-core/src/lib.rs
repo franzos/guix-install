@@ -7,6 +7,7 @@ pub mod guix_ops;
 pub mod hardware;
 pub mod install;
 pub mod installer_log;
+pub mod keyboard;
 pub mod mode;
 pub mod network;
 pub mod passwd;
