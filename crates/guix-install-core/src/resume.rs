@@ -60,6 +60,25 @@ impl InstallState {
     }
 }
 
+/// In-progress interview config, persisted across a GUI keyboard-relaunch so the
+/// restarted GUI resumes with the user's prior answers. Secrets are
+/// `#[serde(skip)]` on SystemConfig, so they are naturally excluded.
+const INTERVIEW_FILE: &str = "/run/guix-install-interview.json";
+
+/// Serialize the in-progress config for a keyboard-relaunch resume.
+pub fn save_interview_state(config: &SystemConfig) -> Result<()> {
+    let json = serde_json::to_string(config)?;
+    std::fs::write(INTERVIEW_FILE, json)?;
+    Ok(())
+}
+
+/// Load and DELETE the interview state, if present. Returns the restored config.
+pub fn take_interview_state() -> Option<SystemConfig> {
+    let data = std::fs::read_to_string(INTERVIEW_FILE).ok()?;
+    let _ = std::fs::remove_file(INTERVIEW_FILE);
+    serde_json::from_str(&data).ok()
+}
+
 fn timestamp_now() -> String {
     let d = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -87,6 +106,16 @@ mod tests {
         assert_eq!(loaded.config.hostname, config.hostname);
         assert_eq!(loaded.config.timezone, config.timezone);
         assert!(!loaded.started_at.is_empty());
+    }
+
+    #[test]
+    fn interview_config_roundtrips_through_serde() {
+        let mut config = SystemConfig::default();
+        config.keyboard_layout = Some("de".into());
+        let json = serde_json::to_string(&config).unwrap();
+        let loaded: SystemConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.keyboard_layout.as_deref(), Some("de"));
+        assert!(loaded.password.is_none()); // serde(skip) — never serialized
     }
 
     #[test]
