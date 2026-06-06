@@ -198,7 +198,7 @@ impl State {
             dry_run,
             install: None,
             failure: None,
-            welcome: true,
+            welcome: !std::path::Path::new(guix_install_core::keyboard::KEYMAP_SENTINEL).exists(),
             tagline: read_tagline(),
             spinner_frame: 0,
             kbd_test: String::new(),

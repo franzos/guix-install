@@ -69,16 +69,18 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
     ui.info("guix-install — Guix System Installer");
     ui.info("");
 
-    if !dry_run
+    // A GUI keyboard-relaunch leaves the in-progress config here; restore it first
+    // so a keyboard relaunch is never mistaken for an interrupted-install resume.
+    let restored = crate::resume::take_interview_state();
+    if restored.is_none()
+        && !dry_run
         && let Some(state) = InstallState::load()?
         && let Some(config) = handle_resume(ui, state)?
     {
         return install::execute_installation(&config, ui);
     }
 
-    // A GUI keyboard-relaunch leaves the in-progress config here; restore it so
-    // the restarted GUI resumes with prior answers (back at the Keyboard step).
-    let mut config = crate::resume::take_interview_state().unwrap_or_default();
+    let mut config = restored.unwrap_or_default();
     let mut nav = StepNavigator::new(&config.mode);
     let mut came_from_back = false;
 
