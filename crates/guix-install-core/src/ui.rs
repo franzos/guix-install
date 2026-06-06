@@ -1,3 +1,4 @@
+use crate::config::SystemConfig;
 use anyhow::Result;
 
 /// Abstraction over user interaction.
@@ -54,6 +55,16 @@ pub trait UserInterface {
     /// the CLI relies on the flat `progress(msg, pct)` path; the GUI wires
     /// this up to its Install screen.
     fn guix_progress(&self, _summary: &libguix::progress::Summary) {}
+
+    /// Apply the chosen keyboard layout to the live session.
+    ///
+    /// Called only when the layout actually changed. Default impl is the CLI
+    /// behavior: no-op (the layout is already stored in `SystemConfig` for the
+    /// target system). The GUI overrides this to persist interview state, write
+    /// the keymap sentinel, and exit so cage relaunches in the new layout.
+    fn apply_keyboard_layout(&mut self, _layout: &str, _config: &SystemConfig) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Launches an editor on `path`. Returns true on a successful spawn (regardless
