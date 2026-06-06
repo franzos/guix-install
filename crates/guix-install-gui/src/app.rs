@@ -434,6 +434,26 @@ impl State {
         }
     }
 
+    /// Primary-action label. On the Keyboard step it reflects whether the
+    /// highlighted layout differs from the live one (selecting applies it).
+    fn next_label(&self) -> &'static str {
+        if self.current_step == StepId::Keyboard
+            && let Active::Select {
+                options, selected, ..
+            } = &self.active
+            && let Some(opt) = options.get(*selected)
+        {
+            let code = opt.split(" \u{2014} ").next().unwrap_or(opt).trim();
+            let live = guix_install_core::keyboard::current_live_layout();
+            return if code == live {
+                "Continue"
+            } else {
+                "Apply keyboard layout"
+            };
+        }
+        "Next"
+    }
+
     /// Submit the active prompt's current value to the worker.
     fn submit(&mut self) -> Task<Message> {
         let response = match &self.active {
@@ -711,7 +731,7 @@ impl State {
                 let body = column![
                     self.view_select(options, *selected, filter),
                     Space::new().height(12),
-                    text("Type here to check your layout:")
+                    text("Type here to test the active layout")
                         .size(13)
                         .color(styles::MUTED),
                     text_input("", &self.kbd_test)
@@ -772,7 +792,7 @@ impl State {
         let card = container(body).padding(20).width(Fill).style(styles::card);
 
         let next_enabled = !matches!(self.active, Active::None);
-        let mut next_btn = button(text("Next"))
+        let mut next_btn = button(text(self.next_label()))
             .padding([10, 20])
             .style(styles::btn_primary);
         if next_enabled {
