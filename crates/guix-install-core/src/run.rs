@@ -82,6 +82,7 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
     loop {
         ui.set_steps(nav.steps(), nav.current_index());
         let result = match nav.current() {
+            StepId::Keyboard => crate::steps::StepResult::Next, // TODO: wire step_keyboard (Task 6)
             StepId::Network => step_network(ui, came_from_back)?,
             StepId::Mode => {
                 let old_mode = config.mode.clone();

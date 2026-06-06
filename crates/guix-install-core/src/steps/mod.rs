@@ -37,6 +37,7 @@ macro_rules! ui_or_back {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepId {
+    Keyboard,
     Network,
     Mode,
     Locale,
@@ -52,6 +53,7 @@ pub enum StepId {
 impl StepId {
     pub fn label(&self) -> &'static str {
         match self {
+            StepId::Keyboard => "Keyboard",
             StepId::Network => "Network",
             StepId::Mode => "Mode",
             StepId::Locale => "Locale",
@@ -123,8 +125,8 @@ impl StepNavigator {
     /// continues forward from the mode selection.
     pub fn reset_for_mode(&mut self, mode: &InstallMode) {
         self.steps = steps_for_mode(mode);
-        // Continue past Network (0) and Mode (1) onto the first config step.
-        self.current = 2.min(self.steps.len() - 1);
+        // Continue past Keyboard (0), Network (1), Mode (2) onto the first config step.
+        self.current = 3.min(self.steps.len() - 1);
     }
 
     pub fn steps(&self) -> &[StepId] {
@@ -135,6 +137,7 @@ impl StepNavigator {
 fn steps_for_mode(mode: &InstallMode) -> Vec<StepId> {
     match mode {
         InstallMode::Enterprise { .. } => vec![
+            StepId::Keyboard,
             StepId::Network,
             StepId::Mode,
             StepId::Disk,
@@ -142,6 +145,7 @@ fn steps_for_mode(mode: &InstallMode) -> Vec<StepId> {
             StepId::Summary,
         ],
         _ => vec![
+            StepId::Keyboard,
             StepId::Network,
             StepId::Mode,
             StepId::Locale,
@@ -163,29 +167,30 @@ mod tests {
     #[test]
     fn panther_includes_all_steps() {
         let nav = StepNavigator::new(&InstallMode::Panther);
-        assert_eq!(nav.steps().len(), 10);
-        assert_eq!(nav.steps()[0], StepId::Network);
-        assert_eq!(nav.steps()[1], StepId::Mode);
-        assert_eq!(nav.steps()[2], StepId::Locale);
-        assert_eq!(nav.steps()[3], StepId::Timezone);
-        assert_eq!(nav.steps()[4], StepId::Hostname);
-        assert_eq!(nav.steps()[5], StepId::Disk);
-        assert_eq!(nav.steps()[6], StepId::Encryption);
-        assert_eq!(nav.steps()[7], StepId::Users);
-        assert_eq!(nav.steps()[8], StepId::Desktop);
-        assert_eq!(nav.steps()[9], StepId::Summary);
+        assert_eq!(nav.steps().len(), 11);
+        assert_eq!(nav.steps()[0], StepId::Keyboard);
+        assert_eq!(nav.steps()[1], StepId::Network);
+        assert_eq!(nav.steps()[2], StepId::Mode);
+        assert_eq!(nav.steps()[3], StepId::Locale);
+        assert_eq!(nav.steps()[4], StepId::Timezone);
+        assert_eq!(nav.steps()[5], StepId::Hostname);
+        assert_eq!(nav.steps()[6], StepId::Disk);
+        assert_eq!(nav.steps()[7], StepId::Encryption);
+        assert_eq!(nav.steps()[8], StepId::Users);
+        assert_eq!(nav.steps()[9], StepId::Desktop);
+        assert_eq!(nav.steps()[10], StepId::Summary);
     }
 
     #[test]
     fn guix_includes_all_steps() {
         let nav = StepNavigator::new(&InstallMode::Guix);
-        assert_eq!(nav.steps().len(), 10);
+        assert_eq!(nav.steps().len(), 11);
     }
 
     #[test]
     fn nonguix_includes_all_steps() {
         let nav = StepNavigator::new(&InstallMode::Nonguix);
-        assert_eq!(nav.steps().len(), 10);
+        assert_eq!(nav.steps().len(), 11);
     }
 
     #[test]
@@ -195,12 +200,13 @@ mod tests {
             config_url: "https://example.com".into(),
         };
         let nav = StepNavigator::new(&mode);
-        assert_eq!(nav.steps().len(), 5);
-        assert_eq!(nav.steps()[0], StepId::Network);
-        assert_eq!(nav.steps()[1], StepId::Mode);
-        assert_eq!(nav.steps()[2], StepId::Disk);
-        assert_eq!(nav.steps()[3], StepId::Encryption);
-        assert_eq!(nav.steps()[4], StepId::Summary);
+        assert_eq!(nav.steps().len(), 6);
+        assert_eq!(nav.steps()[0], StepId::Keyboard);
+        assert_eq!(nav.steps()[1], StepId::Network);
+        assert_eq!(nav.steps()[2], StepId::Mode);
+        assert_eq!(nav.steps()[3], StepId::Disk);
+        assert_eq!(nav.steps()[4], StepId::Encryption);
+        assert_eq!(nav.steps()[5], StepId::Summary);
 
         assert!(!nav.steps().contains(&StepId::Locale));
         assert!(!nav.steps().contains(&StepId::Timezone));
@@ -212,15 +218,12 @@ mod tests {
     #[test]
     fn advance_and_go_back() {
         let mut nav = StepNavigator::new(&InstallMode::Panther);
+        assert_eq!(nav.current(), StepId::Keyboard);
+
+        nav.advance();
         assert_eq!(nav.current(), StepId::Network);
 
         nav.advance();
-        assert_eq!(nav.current(), StepId::Mode);
-
-        nav.advance();
-        assert_eq!(nav.current(), StepId::Locale);
-
-        nav.go_back();
         assert_eq!(nav.current(), StepId::Mode);
 
         nav.go_back();
@@ -233,7 +236,7 @@ mod tests {
         assert!(nav.is_first());
         nav.go_back();
         assert!(nav.is_first());
-        assert_eq!(nav.current(), StepId::Network);
+        assert_eq!(nav.current(), StepId::Keyboard);
     }
 
     #[test]
@@ -255,7 +258,7 @@ mod tests {
         assert!(nav.is_first());
         assert!(!nav.is_last());
 
-        for _ in 0..9 {
+        for _ in 0..10 {
             nav.advance();
         }
         assert!(!nav.is_first());
@@ -265,8 +268,9 @@ mod tests {
     #[test]
     fn reset_for_mode_rebuilds() {
         let mut nav = StepNavigator::new(&InstallMode::Panther);
-        assert_eq!(nav.steps().len(), 10);
+        assert_eq!(nav.steps().len(), 11);
 
+        nav.advance();
         nav.advance();
         nav.advance();
         assert_eq!(nav.current(), StepId::Locale);
@@ -276,7 +280,7 @@ mod tests {
             config_url: "https://example.com".into(),
         };
         nav.reset_for_mode(&enterprise);
-        assert_eq!(nav.steps().len(), 5);
+        assert_eq!(nav.steps().len(), 6);
         assert_eq!(nav.current(), StepId::Disk);
     }
 
@@ -287,10 +291,10 @@ mod tests {
             config_url: "https://example.com".into(),
         };
         let mut nav = StepNavigator::new(&enterprise);
-        assert_eq!(nav.steps().len(), 5);
+        assert_eq!(nav.steps().len(), 6);
 
         nav.reset_for_mode(&InstallMode::Panther);
-        assert_eq!(nav.steps().len(), 10);
+        assert_eq!(nav.steps().len(), 11);
         assert_eq!(nav.current(), StepId::Locale);
     }
 }
