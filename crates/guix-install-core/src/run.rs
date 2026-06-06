@@ -8,6 +8,7 @@ use crate::steps::desktop::step_desktop;
 use crate::steps::disk::step_disk;
 use crate::steps::encryption::step_encryption;
 use crate::steps::hostname::step_hostname;
+use crate::steps::keyboard::step_keyboard;
 use crate::steps::locale::step_locale;
 use crate::steps::mode::step_mode;
 use crate::steps::network::step_network;
@@ -75,14 +76,16 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
         return install::execute_installation(&config, ui);
     }
 
-    let mut config = SystemConfig::default();
+    // A GUI keyboard-relaunch leaves the in-progress config here; restore it so
+    // the restarted GUI resumes with prior answers (back at the Keyboard step).
+    let mut config = crate::resume::take_interview_state().unwrap_or_default();
     let mut nav = StepNavigator::new(&config.mode);
     let mut came_from_back = false;
 
     loop {
         ui.set_steps(nav.steps(), nav.current_index());
         let result = match nav.current() {
-            StepId::Keyboard => crate::steps::StepResult::Next, // TODO: wire step_keyboard (Task 6)
+            StepId::Keyboard => step_keyboard(ui, &mut config)?,
             StepId::Network => step_network(ui, came_from_back)?,
             StepId::Mode => {
                 let old_mode = config.mode.clone();
