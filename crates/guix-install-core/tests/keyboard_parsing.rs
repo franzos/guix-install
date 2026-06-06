@@ -17,9 +17,18 @@ fn parses_layout_section_only() {
     assert_eq!(
         layouts,
         vec![
-            Layout { code: "us".into(), description: "English (US)".into() },
-            Layout { code: "de".into(), description: "German".into() },
-            Layout { code: "pt".into(), description: "Portuguese".into() },
+            Layout {
+                code: "us".into(),
+                description: "English (US)".into()
+            },
+            Layout {
+                code: "de".into(),
+                description: "German".into()
+            },
+            Layout {
+                code: "pt".into(),
+                description: "Portuguese".into()
+            },
         ]
     );
 }

@@ -4,6 +4,7 @@
 
 ### Added
 - Network connection step (Ethernet/Wi-Fi via connmanctl) in both CLI and GUI installers; auto-skips when a substitute server is already reachable.
+- Keyboard layout selection in the GUI installer (first step), applied live by relaunching the compositor; revisitable until passwords are entered.
 
 ## [0.1.4] - 2026-06-04
 

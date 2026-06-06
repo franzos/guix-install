@@ -72,14 +72,12 @@ pub fn parse_layouts(lst: &str) -> Vec<Layout> {
 
 /// The selectable layout list: parsed from evdev.lst, or the built-in fallback.
 pub fn layouts() -> Vec<Layout> {
-    let path = std::env::var("GUIX_INSTALL_XKB_LST")
-        .ok()
-        .or_else(|| {
-            XKB_LST_CANDIDATES
-                .iter()
-                .find(|p| std::path::Path::new(p).exists())
-                .map(|p| p.to_string())
-        });
+    let path = std::env::var("GUIX_INSTALL_XKB_LST").ok().or_else(|| {
+        XKB_LST_CANDIDATES
+            .iter()
+            .find(|p| std::path::Path::new(p).exists())
+            .map(|p| p.to_string())
+    });
     if let Some(p) = path
         && let Ok(data) = std::fs::read_to_string(&p)
     {

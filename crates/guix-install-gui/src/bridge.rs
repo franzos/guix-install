@@ -282,7 +282,9 @@ impl UserInterface for IcedUi {
         guix_install_core::resume::save_interview_state(config)?;
         std::fs::write(KEYMAP_SENTINEL, layout)?;
         std::fs::write(RELAUNCH_MARKER, "")?;
-        self.send(UiEvent::Info(format!("Applying keyboard layout '{layout}'\u{2026}")));
+        self.send(UiEvent::Info(format!(
+            "Applying keyboard layout '{layout}'\u{2026}"
+        )));
         // Exit so cage tears down; launch-gui relaunches with XKB_DEFAULT_LAYOUT.
         std::process::exit(0);
     }

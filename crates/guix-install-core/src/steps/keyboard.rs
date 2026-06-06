@@ -21,7 +21,10 @@ pub fn step_keyboard(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> R
     let live = keyboard::current_live_layout();
 
     if secret_entered(config) {
-        let current = config.keyboard_layout.clone().unwrap_or_else(|| live.clone());
+        let current = config
+            .keyboard_layout
+            .clone()
+            .unwrap_or_else(|| live.clone());
         ui.info(&format!(
             "Keyboard layout: {current} (locked — passwords already entered)"
         ));
@@ -35,8 +38,14 @@ pub fn step_keyboard(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> R
         .collect();
     let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
 
-    let default_code = config.keyboard_layout.clone().unwrap_or_else(|| live.clone());
-    let default_idx = layouts.iter().position(|l| l.code == default_code).unwrap_or(0);
+    let default_code = config
+        .keyboard_layout
+        .clone()
+        .unwrap_or_else(|| live.clone());
+    let default_idx = layouts
+        .iter()
+        .position(|l| l.code == default_code)
+        .unwrap_or(0);
 
     let idx = ui_or_back!(ui.select("Keyboard layout", &label_refs, default_idx));
     let chosen = layouts[idx].code.clone();
