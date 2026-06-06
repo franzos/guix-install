@@ -271,6 +271,22 @@ impl UserInterface for IcedUi {
         self.send(UiEvent::GuixDetail(summarize(summary)));
     }
 
+    fn apply_keyboard_layout(
+        &mut self,
+        layout: &str,
+        config: &guix_install_core::config::SystemConfig,
+    ) -> anyhow::Result<()> {
+        use guix_install_core::keyboard::{KEYMAP_SENTINEL, RELAUNCH_MARKER};
+        // Persist the in-progress config so the relaunched GUI resumes with prior
+        // answers (secrets are serde(skip); the step is locked after any secret).
+        guix_install_core::resume::save_interview_state(config)?;
+        std::fs::write(KEYMAP_SENTINEL, layout)?;
+        std::fs::write(RELAUNCH_MARKER, "")?;
+        self.send(UiEvent::Info(format!("Applying keyboard layout '{layout}'\u{2026}")));
+        // Exit so cage tears down; launch-gui relaunches with XKB_DEFAULT_LAYOUT.
+        std::process::exit(0);
+    }
+
     fn set_steps(&mut self, steps: &[StepId], current: usize) {
         let entries = steps
             .iter()

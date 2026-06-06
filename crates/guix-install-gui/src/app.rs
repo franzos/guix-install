@@ -67,6 +67,8 @@ pub enum Message {
     Shutdown,
     /// GUI-side timer tick that advances the busy spinner during network waits.
     SpinnerTick,
+    /// Keyboard step: scratch "type to test your layout" text changed.
+    KbdTestChanged(String),
 }
 
 /// The active prompt plus its in-progress local edit state.
@@ -159,6 +161,8 @@ pub struct State {
     tagline: String,
     /// Advances on each `SpinnerTick` while the idle "Working…" view is shown.
     spinner_frame: usize,
+    /// Scratch text for the Keyboard step's "type to test your layout" field.
+    kbd_test: String,
 }
 
 #[derive(Clone)]
@@ -197,6 +201,7 @@ impl State {
             welcome: true,
             tagline: read_tagline(),
             spinner_frame: 0,
+            kbd_test: String::new(),
         };
         (state, focus_input())
     }
@@ -402,6 +407,10 @@ impl State {
                 self.spinner_frame = self.spinner_frame.wrapping_add(1);
                 Task::none()
             }
+            Message::KbdTestChanged(s) => {
+                self.kbd_test = s;
+                Task::none()
+            }
         }
     }
 
@@ -473,6 +482,9 @@ impl State {
                         content: text_editor::Content::with_text(&initial),
                     },
                 };
+                if self.current_step == StepId::Keyboard {
+                    self.kbd_test.clear();
+                }
                 Task::batch([focus_input(), self.scroll_to_highlight()])
             }
             UiEvent::Rail { entries, current } => {
@@ -689,6 +701,25 @@ impl State {
                 .spacing(8)
                 .into();
                 (String::new(), body)
+            }
+            Active::Select {
+                prompt,
+                options,
+                selected,
+                filter,
+            } if self.current_step == StepId::Keyboard => {
+                let body = column![
+                    self.view_select(options, *selected, filter),
+                    Space::new().height(12),
+                    text("Type here to check your layout:")
+                        .size(13)
+                        .color(styles::MUTED),
+                    text_input("", &self.kbd_test)
+                        .on_input(Message::KbdTestChanged)
+                        .padding(8),
+                ]
+                .spacing(6);
+                (prompt.clone(), body.into())
             }
             Active::Select {
                 prompt,
