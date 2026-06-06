@@ -3,6 +3,7 @@ pub mod desktop;
 pub mod disk;
 pub mod encryption;
 pub mod hostname;
+pub mod keyboard;
 pub mod locale;
 pub mod mode;
 pub mod network;
