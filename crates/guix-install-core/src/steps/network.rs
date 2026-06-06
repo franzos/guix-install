@@ -26,7 +26,7 @@ pub fn step_network(ui: &mut dyn UserInterface, came_from_back: bool) -> Result<
         ui.info("Network connected ✓");
         let choice = match ui.select("Network", &["Continue", "Change network…"], 0) {
             Ok(i) => i,
-            Err(e) if is_cancelled(&e) => 0, // Escape = Continue (already online)
+            Err(e) if is_cancelled(&e) => return Ok(StepResult::Back),
             Err(e) => return Err(e),
         };
         if choice == 0 {
