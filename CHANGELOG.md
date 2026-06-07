@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.6] - 2026-06-07
 
 ### Added
 - Network step shows a "(connected)" marker next to the network you're already on, and selecting it skips the passphrase prompt.

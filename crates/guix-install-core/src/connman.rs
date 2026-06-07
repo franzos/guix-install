@@ -97,7 +97,9 @@ pub fn parse_service_detail(stdout: &str) -> (LinkState, Option<String>) {
             saw_state = true;
             continue;
         }
-        if error.is_none() && let Some(v) = l.strip_prefix("Error =") {
+        if error.is_none()
+            && let Some(v) = l.strip_prefix("Error =")
+        {
             let v = v.trim();
             if !v.is_empty() {
                 error = Some(v.to_string());
@@ -365,9 +367,7 @@ fn failure_message(error: Option<&str>) -> String {
         Some(e) if e == "connect-failed" || e.contains("association") => {
             "couldn't associate with the network (signal or AP issue)".into()
         }
-        Some("dhcp-failed") => {
-            "connected to the AP but DHCP failed (no IP address)".into()
-        }
+        Some("dhcp-failed") => "connected to the AP but DHCP failed (no IP address)".into(),
         _ => "connection failed — check signal and passphrase".into(),
     }
 }

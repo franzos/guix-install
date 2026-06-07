@@ -71,12 +71,7 @@ fn connect_bails_on_invalid_key() {
         std::env::remove_var("FAKE_STATE");
         std::env::remove_var("FAKE_CONNECT_EXIT");
     }
-    let r = connect_with_deadline(
-        "wifi_x_managed_psk",
-        "Net",
-        None,
-        Duration::from_secs(2),
-    );
+    let r = connect_with_deadline("wifi_x_managed_psk", "Net", None, Duration::from_secs(2));
     unsafe {
         std::env::remove_var("FAKE_SERVICE_STATE");
         std::env::remove_var("FAKE_SERVICE_ERROR");
