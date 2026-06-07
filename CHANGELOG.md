@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Network step shows a "(connected)" marker next to the network you're already on, and selecting it skips the passphrase prompt.
+- The network list shows each Wi-Fi network once (deduplicated by name), so the same SSID seen by two adapters is no longer an ambiguous duplicate; the adapter is chosen automatically when you connect.
+
+### Fixed
+- Wi-Fi connect now confirms the *chosen* network actually connected and the internet is reachable, instead of trusting overall connman state. On machines with a second Wi-Fi adapter already online this previously reported a false "connected" while leaving you offline.
+
 ## [0.1.5] - 2026-06-06
 
 ### Added

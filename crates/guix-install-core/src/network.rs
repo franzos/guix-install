@@ -38,21 +38,44 @@ pub enum Selection {
 /// Build the display labels for the select menu: wifi networks first (EAP rows
 /// marked unsupported), then the action rows. Order matches resolve_selection.
 pub fn build_menu(wifi: &[Service]) -> Vec<String> {
-    let mut labels: Vec<String> = wifi
-        .iter()
-        .map(|s| {
-            let lock = if s.secured { "🔒 " } else { "   " };
-            if s.eap {
-                format!("{lock}{} (enterprise — use Ethernet)", s.name)
-            } else {
-                format!("{lock}{}", s.name)
-            }
-        })
-        .collect();
+    let mut labels: Vec<String> = wifi.iter().map(network_label).collect();
     labels.push("⟳ Rescan".to_string());
     labels.push("Check wired connection".to_string());
     labels.push("Continue without network".to_string());
     labels
+}
+
+/// Display label for a single Wi-Fi service (lock icon, EAP note, connected mark).
+fn network_label(s: &Service) -> String {
+    let lock = if s.secured { "🔒 " } else { "   " };
+    let mut label = if s.eap {
+        format!("{lock}{} (enterprise — use Ethernet)", s.name)
+    } else {
+        format!("{lock}{}", s.name)
+    };
+    if s.connected {
+        label.push_str(" (connected)");
+    }
+    label
+}
+
+/// Collapse services to one representative per SSID (`Service.name`), preserving
+/// first-seen order. When several services share a name, a connected one wins;
+/// otherwise the first seen. Two adapters on the same network thus yield one row,
+/// marked connected if either is connected.
+pub fn dedup_by_ssid(services: &[Service]) -> Vec<Service> {
+    let mut reps: Vec<Service> = Vec::new();
+    for s in services {
+        match reps.iter_mut().find(|r| r.name == s.name) {
+            Some(existing) => {
+                if s.connected && !existing.connected {
+                    *existing = s.clone();
+                }
+            }
+            None => reps.push(s.clone()),
+        }
+    }
+    reps
 }
 
 /// Map a selected menu index back to a Selection, given the wifi count.
@@ -103,73 +126,104 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
             Vec::new()
         };
 
+        let wifi = dedup_by_ssid(&wifi);
         let labels = build_menu(&wifi);
         let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
 
-        // Cancel on the top-level menu == "Continue without network" prompt.
         let index = match ui.select("Connect to a network", &label_refs, 0) {
             Ok(i) => i,
             Err(e) if is_cancelled(&e) => {
-                match ui.confirm(
-                    "Continue without a network? guix pull/init will likely fail.",
-                    false,
-                ) {
-                    Ok(true) => return Ok(()),
-                    Ok(false) => continue,
-                    Err(e) if is_cancelled(&e) => continue,
-                    Err(e) => return Err(e),
+                if confirm_skip(ui)? {
+                    return Ok(());
                 }
+                continue;
             }
             Err(e) => return Err(e),
         };
 
-        match resolve_selection(index, wifi.len()) {
-            Selection::Action(NetworkAction::Rescan) => continue,
-            Selection::Action(NetworkAction::Ethernet) => {
-                ui.info("Checking wired connection…");
-                if reachable() {
-                    ui.info("Network connected ✓");
-                    return Ok(());
-                }
-                ui.warn(
-                    "No connection detected. Plug in the Ethernet cable, then choose ⟳ Rescan.",
-                );
-                continue;
-            }
-            Selection::Action(NetworkAction::Skip) => {
-                match ui.confirm(
-                    "Continue without a network? guix pull/init will likely fail.",
-                    false,
-                ) {
-                    Ok(true) => return Ok(()),
-                    Ok(false) => continue,
-                    Err(e) if is_cancelled(&e) => continue,
-                    Err(e) => return Err(e),
-                }
-            }
-            Selection::Network(i) => {
-                let svc = &wifi[i];
-                if svc.eap {
-                    ui.warn("Enterprise (802.1x) Wi-Fi isn't supported here — use Ethernet or connect from a shell.");
-                    continue;
-                }
-                let pw = if svc.secured {
-                    match ui.password("Wi-Fi passphrase") {
-                        Ok(p) => Some(p),
-                        Err(e) if is_cancelled(&e) => continue,
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    None
-                };
-                ui.info(&format!("Connecting to {}…", svc.name));
-                match connman::connect(&svc.path, &svc.name, pw.as_ref()) {
-                    Ok(()) => return Ok(()),
-                    Err(e) => ui.warn(&format!("Couldn't connect: {e}")),
-                }
-            }
+        let done = match resolve_selection(index, wifi.len()) {
+            Selection::Action(action) => handle_action(ui, action)?,
+            Selection::Network(i) => connect_to(ui, &wifi[i])?,
+        };
+        if done {
+            return Ok(());
         }
     }
+}
+
+/// Handle a Rescan/Ethernet/Skip action row. `Ok(true)` ends the flow.
+fn handle_action(ui: &mut dyn UserInterface, action: NetworkAction) -> Result<bool> {
+    match action {
+        NetworkAction::Rescan => Ok(false),
+        NetworkAction::Ethernet => {
+            ui.info("Checking wired connection…");
+            if reachable() {
+                ui.info("Network connected ✓");
+                return Ok(true);
+            }
+            ui.warn("No connection detected. Plug in the Ethernet cable, then choose ⟳ Rescan.");
+            Ok(false)
+        }
+        NetworkAction::Skip => confirm_skip(ui),
+    }
+}
+
+/// "Continue without a network?" confirm. `Ok(true)` to proceed, `Ok(false)`
+/// to fall back into the menu loop.
+fn confirm_skip(ui: &mut dyn UserInterface) -> Result<bool> {
+    match ui.confirm(
+        "Continue without a network? guix pull/init will likely fail.",
+        false,
+    ) {
+        Ok(v) => Ok(v),
+        Err(e) if is_cancelled(&e) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// Prompt + dial a chosen network. If the representative is already connected,
+/// skip the passphrase and dial and just verify reachability. `Ok(true)` when
+/// connected, `Ok(false)` to return to the list.
+fn connect_to(ui: &mut dyn UserInterface, svc: &Service) -> Result<bool> {
+    if svc.eap {
+        ui.warn("Enterprise (802.1x) Wi-Fi isn't supported here — use Ethernet or connect from a shell.");
+        return Ok(false);
+    }
+
+    if svc.connected {
+        if reachable() {
+            ui.info("Network connected ✓");
+            return Ok(true);
+        }
+        ui.warn(
+            "Connected to the network, but there's no internet yet (substitute server unreachable). Try again or pick a different network.",
+        );
+        return Ok(false);
+    }
+
+    let pw = if svc.secured {
+        match ui.password("Wi-Fi passphrase") {
+            Ok(p) => Some(p),
+            Err(e) if is_cancelled(&e) => return Ok(false),
+            Err(e) => return Err(e),
+        }
+    } else {
+        None
+    };
+    ui.info(&format!("Connecting to {}…", svc.name));
+    match connman::connect(&svc.path, &svc.name, pw.as_ref()) {
+        Ok(()) => {
+            if reachable() {
+                ui.info("Network connected ✓");
+                return Ok(true);
+            }
+            ui.warn(
+                "Connected to the network, but there's no internet yet (substitute server unreachable). Try again or pick a different network.",
+            );
+        }
+        Err(e) => ui.warn(&format!("Couldn't connect: {e}")),
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
@@ -177,11 +231,15 @@ mod tests {
     use super::*;
 
     fn svc(name: &str, secured: bool, eap: bool) -> Service {
+        svc_p(&format!("wifi_{name}"), name, secured, eap, false)
+    }
+
+    fn svc_p(path: &str, name: &str, secured: bool, eap: bool, connected: bool) -> Service {
         Service {
-            path: format!("wifi_{name}"),
+            path: path.into(),
             name: name.into(),
             tech: Tech::Wifi,
-            connected: false,
+            connected,
             secured,
             eap,
         }
@@ -203,6 +261,41 @@ mod tests {
     fn eap_label_marked_unsupported() {
         let wifi = vec![svc("Corp", true, true)];
         assert!(build_menu(&wifi)[0].contains("enterprise"));
+    }
+
+    #[test]
+    fn connected_marker_only_on_connected() {
+        let wifi = vec![
+            svc_p("wifi_aa_x_managed_psk", "Home", true, false, true),
+            svc("Cafe", false, false),
+        ];
+        let labels = build_menu(&wifi);
+        assert!(labels[0].contains("(connected)"));
+        assert!(labels[0].contains("Home"));
+        assert!(!labels[1].contains("(connected)"));
+    }
+
+    #[test]
+    fn dedup_collapses_same_ssid_prefers_connected() {
+        let wifi = vec![
+            svc_p("wifi_aaaa_x_managed_psk", "Home", true, false, false),
+            svc_p("wifi_bbbb_x_managed_psk", "Home", true, false, true),
+            svc_p("wifi_cccc_y_managed_none", "Cafe", false, false, false),
+        ];
+        let reps = dedup_by_ssid(&wifi);
+        assert_eq!(reps.len(), 2);
+        assert_eq!(reps[0].name, "Home");
+        assert!(reps[0].connected);
+        assert_eq!(reps[0].path, "wifi_bbbb_x_managed_psk");
+        assert_eq!(reps[1].name, "Cafe");
+        assert!(!reps[1].connected);
+
+        let labels = build_menu(&reps);
+        assert_eq!(labels.len(), 5);
+        assert!(labels[0].contains("Home"));
+        assert!(labels[0].contains("(connected)"));
+        assert!(labels[1].contains("Cafe"));
+        assert!(!labels[1].contains("(connected)"));
     }
 
     #[test]

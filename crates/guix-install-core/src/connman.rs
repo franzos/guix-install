@@ -75,6 +75,38 @@ pub fn parse_state(stdout: &str) -> LinkState {
     LinkState::Unknown
 }
 
+/// Parse a `connmanctl services <path>` detail block: indented `Key = Value`
+/// lines. Returns the service's `State =` (same mapping as `parse_state`) plus
+/// the optional `Error =` value (`invalid-key`, `connect-failed`, `dhcp-failed`).
+pub fn parse_service_detail(stdout: &str) -> (LinkState, Option<String>) {
+    let mut state = LinkState::Unknown;
+    let mut saw_state = false;
+    let mut error = None;
+    for line in stdout.lines() {
+        let l = line.trim();
+        if !saw_state && let Some(v) = l.strip_prefix("State =") {
+            state = match v.trim() {
+                "online" => LinkState::Online,
+                "ready" => LinkState::Ready,
+                "idle" => LinkState::Idle,
+                "association" | "configuration" => LinkState::Association,
+                "failure" => LinkState::Failure,
+                "disconnect" | "offline" => LinkState::Disconnect,
+                _ => LinkState::Unknown,
+            };
+            saw_state = true;
+            continue;
+        }
+        if error.is_none() && let Some(v) = l.strip_prefix("Error =") {
+            let v = v.trim();
+            if !v.is_empty() {
+                error = Some(v.to_string());
+            }
+        }
+    }
+    (state, error)
+}
+
 /// Parse the `connmanctl services` summary into services.
 ///
 /// Each line is `[flags]  <name>  <service-path>`; the path is the last
@@ -140,6 +172,11 @@ pub fn state() -> Result<LinkState> {
 /// Available Wi-Fi/ethernet services (`connmanctl services`).
 pub fn services() -> Result<Vec<Service>> {
     Ok(parse_services(&cc(&["services"])?.stdout))
+}
+
+/// State + optional error of one service (`connmanctl services <path>`).
+pub fn service_state(path: &str) -> Result<(LinkState, Option<String>)> {
+    Ok(parse_service_detail(&cc(&["services", path])?.stdout))
 }
 
 /// Power on a technology and wait (bounded) for `Powered = True`.
@@ -295,22 +332,43 @@ pub(crate) fn connect_with_deadline(
         None
     };
 
-    let deadline = Instant::now() + timeout;
     // connmanctl `connect` can exit non-zero yet still associate; its failure is
     // already in the installer log. Let the poll decide and surface its message.
     let _ = cc(&["connect", path]);
-    poll_connected(deadline)
+    // Start the poll budget AFTER connect returns — `connect` itself can block.
+    let deadline = Instant::now() + timeout;
+    poll_service_connected(path, deadline)
 }
 
-fn poll_connected(deadline: Instant) -> Result<()> {
+/// Poll the CHOSEN service (not global `state`) — a second already-connected
+/// adapter must not make this read `ready`.
+fn poll_service_connected(path: &str, deadline: Instant) -> Result<()> {
     loop {
-        if state()?.is_connected() {
+        let (state, error) = service_state(path)?;
+        if state.is_connected() {
             return Ok(());
+        }
+        if state == LinkState::Failure {
+            bail!("{}", failure_message(error.as_deref()));
         }
         if Instant::now() >= deadline {
             bail!("connection timed out — check signal and passphrase");
         }
         std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// Map a connman service `Error =` value to an actionable message.
+fn failure_message(error: Option<&str>) -> String {
+    match error {
+        Some("invalid-key") => "incorrect Wi-Fi passphrase".into(),
+        Some(e) if e == "connect-failed" || e.contains("association") => {
+            "couldn't associate with the network (signal or AP issue)".into()
+        }
+        Some("dhcp-failed") => {
+            "connected to the AP but DHCP failed (no IP address)".into()
+        }
+        _ => "connection failed — check signal and passphrase".into(),
     }
 }
 
@@ -372,6 +430,29 @@ mod tests {
         let only_eth = "/net/connman/technology/ethernet\n  Powered = True\n";
         assert!(lists_technology(only_eth, Tech::Ethernet));
         assert!(!lists_technology(only_eth, Tech::Wifi));
+    }
+
+    #[test]
+    fn service_detail_parses_state_and_error() {
+        let block = "  Type = wifi\n  State = failure\n  Error = invalid-key\n";
+        let (state, error) = parse_service_detail(block);
+        assert_eq!(state, LinkState::Failure);
+        assert_eq!(error.as_deref(), Some("invalid-key"));
+    }
+
+    #[test]
+    fn service_detail_no_error() {
+        let (state, error) = parse_service_detail("  State = online\n");
+        assert_eq!(state, LinkState::Online);
+        assert_eq!(error, None);
+    }
+
+    #[test]
+    fn failure_message_maps_known_errors() {
+        assert!(failure_message(Some("invalid-key")).contains("passphrase"));
+        assert!(failure_message(Some("connect-failed")).contains("associate"));
+        assert!(failure_message(Some("dhcp-failed")).contains("DHCP"));
+        assert!(!failure_message(None).is_empty());
     }
 
     #[test]
