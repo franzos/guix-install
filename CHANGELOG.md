@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7] - 2026-06-08
+
+### Fixed
+- Wi-Fi connect waits for the link to settle before checking the internet, so a freshly-connected network is no longer falsely reported offline.
+
+### Changed
+- Online check now probes the selected mode's substitute servers, not just bordeaux.
+
 ## [0.1.6] - 2026-06-07
 
 ### Added

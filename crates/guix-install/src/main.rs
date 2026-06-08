@@ -239,7 +239,12 @@ fn main() -> Result<()> {
         }
         Some(Commands::Wifi) => {
             let mut ui = Repl::new();
-            network::connect_flow(&mut ui)?;
+            let mode = match cli.mode.as_str() {
+                "guix" => InstallMode::Guix,
+                "nonguix" => InstallMode::Nonguix,
+                _ => InstallMode::Panther,
+            };
+            network::connect_flow(&mut ui, &mode)?;
         }
         None => {
             if cli.dry_run {

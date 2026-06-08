@@ -18,27 +18,6 @@ const GOFRANZ_KEY: &str = include_str!("../keys/substitutes.guix.gofranz.com.pub
 const TARGET_DIR: &str = "/mnt";
 const LOG_PATH: &str = "/mnt/var/log/guix-install.log";
 
-/// Default guix substitute server, always kept first.
-const GUIX_CI_URL: &str = "https://ci.guix.gnu.org";
-const NONGUIX_URL: &str = "https://substitutes.nonguix.org";
-const GOFRANZ_URL: &str = "https://substitutes.guix.gofranz.com";
-
-/// Substitute URLs guix should use for `pull` / `system init`, per mode —
-/// mirrors the keys authorized in [`phase_authorize`]. The default CI server
-/// stays first; mode-specific servers are appended.
-fn substitute_urls(mode: &InstallMode) -> Vec<String> {
-    let mut urls = vec![GUIX_CI_URL.to_string()];
-    match mode {
-        InstallMode::Guix => {}
-        InstallMode::Nonguix => urls.push(NONGUIX_URL.into()),
-        InstallMode::Panther | InstallMode::Enterprise { .. } => {
-            urls.push(NONGUIX_URL.into());
-            urls.push(GOFRANZ_URL.into());
-        }
-    }
-    urls
-}
-
 const GUIX_DB_FILE: &str = "/var/guix/db/db.sqlite";
 const GUIX_DB_SAVE: &str = "/var/guix/db/db.save";
 const GUIX_DB_WAL: &str = "/var/guix/db/db.sqlite-wal";
@@ -543,7 +522,7 @@ fn phase_pull(
     ui.info("  Running guix pull (this may take a while)...");
     crate::guix_ops::run_pull(
         Path::new("/mnt/etc/guix/channels.scm"),
-        substitute_urls(&config.mode),
+        config.mode.substitute_urls(),
         ui,
     )?;
 
@@ -582,7 +561,7 @@ fn phase_install(
     crate::guix_ops::run_system_init(
         Path::new("/mnt/etc/system.scm"),
         Path::new(TARGET_DIR),
-        substitute_urls(&config.mode),
+        config.mode.substitute_urls(),
         ui,
     )?;
 

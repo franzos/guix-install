@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::connman;
+use crate::mode::InstallMode;
 use crate::network;
 use crate::steps::StepResult;
 use crate::ui::{UserInterface, is_cancelled};
@@ -11,9 +12,13 @@ pub fn should_autoskip(came_from_back: bool, reachable: bool) -> bool {
     !came_from_back && reachable
 }
 
-pub fn step_network(ui: &mut dyn UserInterface, came_from_back: bool) -> Result<StepResult> {
+pub fn step_network(
+    ui: &mut dyn UserInterface,
+    came_from_back: bool,
+    mode: &InstallMode,
+) -> Result<StepResult> {
     ui.info("Checking network connection…");
-    let reachable = network::reachable();
+    let reachable = network::reachable(mode);
     if should_autoskip(came_from_back, reachable) {
         return Ok(StepResult::Next);
     }
@@ -34,7 +39,7 @@ pub fn step_network(ui: &mut dyn UserInterface, came_from_back: bool) -> Result<
         }
     }
 
-    network::connect_flow(ui)?;
+    network::connect_flow(ui, mode)?;
     Ok(StepResult::Next)
 }
 

@@ -2,6 +2,10 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+pub const CI_GUIX_URL: &str = "https://ci.guix.gnu.org";
+pub const NONGUIX_URL: &str = "https://substitutes.nonguix.org";
+pub const GOFRANZ_URL: &str = "https://substitutes.guix.gofranz.com";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum InstallMode {
     Guix,
@@ -35,5 +39,18 @@ impl InstallMode {
             InstallMode::Panther => "panther",
             InstallMode::Enterprise { .. } => "enterprise",
         }
+    }
+
+    pub fn substitute_urls(&self) -> Vec<String> {
+        let mut urls = vec![CI_GUIX_URL.to_string()];
+        match self {
+            InstallMode::Guix => {}
+            InstallMode::Nonguix => urls.push(NONGUIX_URL.into()),
+            InstallMode::Panther | InstallMode::Enterprise { .. } => {
+                urls.push(NONGUIX_URL.into());
+                urls.push(GOFRANZ_URL.into());
+            }
+        }
+        urls
     }
 }

@@ -1,23 +1,44 @@
 //! Shared network-connect orchestration over the connman module.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
 use crate::connman::{self, Service, Tech};
+use crate::mode::InstallMode;
 use crate::ui::{UserInterface, is_cancelled};
 
 const SUBSTITUTE_PROBE_URL: &str = "https://bordeaux.guix.gnu.org/nix-cache-info";
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const REACHABLE_BUDGET: Duration = Duration::from_secs(20);
+const REACHABLE_BACKOFF: Duration = Duration::from_millis(1500);
 
-/// True if a Guix substitute server is actually reachable. This — not raw
-/// `connmanctl state` — is the "are we online" test, so captive portals and
-/// `ready`-without-internet do not pass. Mirrors connman.scm's
-/// `check-substitute-availability`.
-pub fn reachable() -> bool {
-    ureq::get(SUBSTITUTE_PROBE_URL)
-        .timeout(Duration::from_secs(5))
-        .call()
-        .is_ok()
+fn probe(url: &str) -> bool {
+    ureq::get(url).timeout(PROBE_TIMEOUT).call().is_ok()
+}
+
+/// True if any of the mode's substitute servers is reachable, with a bordeaux fallback.
+pub fn reachable(mode: &InstallMode) -> bool {
+    mode.substitute_urls()
+        .iter()
+        .any(|base| probe(&format!("{base}/nix-cache-info")))
+        || probe(SUBSTITUTE_PROBE_URL)
+}
+
+/// Patient variant of [`reachable`]: a freshly-connected link reports `ready`
+/// before the route/ARP settle, so a single probe can miss. Retry with backoff
+/// until reachable or the budget is spent.
+fn wait_reachable(mode: &InstallMode, budget: Duration) -> bool {
+    let deadline = Instant::now() + budget;
+    loop {
+        if reachable(mode) {
+            return true;
+        }
+        if Instant::now() + REACHABLE_BACKOFF >= deadline {
+            return false;
+        }
+        std::thread::sleep(REACHABLE_BACKOFF);
+    }
 }
 
 /// Non-network action rows appended to the network list.
@@ -93,7 +114,7 @@ pub fn resolve_selection(index: usize, wifi_count: usize) -> Selection {
 
 /// Interactive connect loop: enable Wi-Fi, scan, list, connect. Returns when the
 /// user is connected or explicitly continues without a network.
-pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
+pub fn connect_flow(ui: &mut dyn UserInterface, mode: &InstallMode) -> Result<()> {
     loop {
         // Assume present on probe error so a transient connmanctl hiccup doesn't
         // hide the Wi-Fi path entirely.
@@ -142,8 +163,8 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
         };
 
         let done = match resolve_selection(index, wifi.len()) {
-            Selection::Action(action) => handle_action(ui, action)?,
-            Selection::Network(i) => connect_to(ui, &wifi[i])?,
+            Selection::Action(action) => handle_action(ui, action, mode)?,
+            Selection::Network(i) => connect_to(ui, &wifi[i], mode)?,
         };
         if done {
             return Ok(());
@@ -152,12 +173,16 @@ pub fn connect_flow(ui: &mut dyn UserInterface) -> Result<()> {
 }
 
 /// Handle a Rescan/Ethernet/Skip action row. `Ok(true)` ends the flow.
-fn handle_action(ui: &mut dyn UserInterface, action: NetworkAction) -> Result<bool> {
+fn handle_action(
+    ui: &mut dyn UserInterface,
+    action: NetworkAction,
+    mode: &InstallMode,
+) -> Result<bool> {
     match action {
         NetworkAction::Rescan => Ok(false),
         NetworkAction::Ethernet => {
             ui.info("Checking wired connection…");
-            if reachable() {
+            if reachable(mode) {
                 ui.info("Network connected ✓");
                 return Ok(true);
             }
@@ -184,14 +209,15 @@ fn confirm_skip(ui: &mut dyn UserInterface) -> Result<bool> {
 /// Prompt + dial a chosen network. If the representative is already connected,
 /// skip the passphrase and dial and just verify reachability. `Ok(true)` when
 /// connected, `Ok(false)` to return to the list.
-fn connect_to(ui: &mut dyn UserInterface, svc: &Service) -> Result<bool> {
+fn connect_to(ui: &mut dyn UserInterface, svc: &Service, mode: &InstallMode) -> Result<bool> {
     if svc.eap {
         ui.warn("Enterprise (802.1x) Wi-Fi isn't supported here — use Ethernet or connect from a shell.");
         return Ok(false);
     }
 
     if svc.connected {
-        if reachable() {
+        ui.info("Verifying internet access…");
+        if wait_reachable(mode, REACHABLE_BUDGET) {
             ui.info("Network connected ✓");
             return Ok(true);
         }
@@ -213,7 +239,8 @@ fn connect_to(ui: &mut dyn UserInterface, svc: &Service) -> Result<bool> {
     ui.info(&format!("Connecting to {}…", svc.name));
     match connman::connect(&svc.path, &svc.name, pw.as_ref()) {
         Ok(()) => {
-            if reachable() {
+            ui.info("Verifying internet access…");
+            if wait_reachable(mode, REACHABLE_BUDGET) {
                 ui.info("Network connected ✓");
                 return Ok(true);
             }
