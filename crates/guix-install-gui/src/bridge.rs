@@ -8,7 +8,7 @@
 use std::sync::mpsc::Receiver as SyncReceiver;
 
 use guix_install_core::steps::StepId;
-use guix_install_core::ui::{UserCancelled, UserInterface};
+use guix_install_core::ui::{SummaryData, UserCancelled, UserInterface};
 use iced::futures::channel::mpsc::UnboundedSender;
 
 /// A blocking prompt the GUI must render and answer.
@@ -68,6 +68,8 @@ pub enum UiEvent {
     Info(String),
     Warn(String),
     Error(String),
+    /// Structured pre-install summary for the grouped Summary screen.
+    Summary(SummaryData),
     Progress {
         msg: String,
         pct: Option<f32>,
@@ -251,6 +253,10 @@ impl UserInterface for IcedUi {
 
     fn error(&self, msg: &str) {
         self.send(UiEvent::Error(msg.to_string()));
+    }
+
+    fn summary(&self, data: &SummaryData) {
+        self.send(UiEvent::Summary(data.clone()));
     }
 
     fn progress(&self, msg: &str, pct: Option<f32>) {

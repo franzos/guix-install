@@ -18,6 +18,33 @@ pub trait UserInterface {
     fn error(&self, msg: &str);
     fn progress(&self, msg: &str, pct: Option<f32>);
 
+    /// Renders the pre-install configuration summary.
+    ///
+    /// The default impl flattens `data` into `info`/`warn` lines — the CLI
+    /// presentation. The GUI overrides this to send the structured data across
+    /// the bridge and lay it out as grouped sections.
+    fn summary(&self, data: &SummaryData) {
+        self.info("");
+        self.info("=== Installation Summary ===");
+        if let Some(note) = &data.note {
+            self.warn(note);
+            self.info("");
+        }
+        for section in &data.sections {
+            for row in &section.rows {
+                self.info(&format!("{:<16}{}", format!("{}:", row.label), row.value));
+            }
+        }
+        self.info("");
+        self.info("Partition layout:");
+        for line in &data.layout {
+            self.info(&format!("  {line}"));
+        }
+        self.info("");
+        self.warn(&data.warning);
+        self.info("");
+    }
+
     /// Edits a multi-line text blob, returning `Some(edited)` if saved or
     /// `None` if the user cancelled without changes.
     ///
@@ -101,4 +128,39 @@ impl std::error::Error for UserCancelled {}
 
 pub fn is_cancelled(e: &anyhow::Error) -> bool {
     e.downcast_ref::<UserCancelled>().is_some()
+}
+
+/// Structured pre-install summary: grouped sections plus the partition layout
+/// and the destructive-action warning. Built once by the summary step, then
+/// rendered per-UI (flat text on the CLI, grouped cards in the GUI).
+#[derive(Debug, Clone)]
+pub struct SummaryData {
+    /// Caveat shown above the rows when a custom `system.scm` is in use.
+    pub note: Option<String>,
+    pub sections: Vec<SummarySection>,
+    /// Partition-preview lines (already formatted, e.g. "sda1 200 MB EFI …").
+    pub layout: Vec<String>,
+    /// "/dev/sda will be formatted. ALL DATA WILL BE LOST."
+    pub warning: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SummarySection {
+    pub title: String,
+    pub rows: Vec<SummaryRow>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SummaryRow {
+    pub label: String,
+    pub value: String,
+}
+
+impl SummaryRow {
+    pub fn new(label: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            value: value.into(),
+        }
+    }
 }

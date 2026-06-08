@@ -5,7 +5,7 @@ use crate::disk::format_size;
 use crate::mode::InstallMode;
 use crate::scheme;
 use crate::steps::StepResult;
-use crate::ui::UserInterface;
+use crate::ui::{SummaryData, SummaryRow, SummarySection, UserInterface};
 
 const MAIN_OPTIONS: &[&str] = &[
     "Advanced configuration",
@@ -15,7 +15,7 @@ const MAIN_OPTIONS: &[&str] = &[
 
 pub fn step_summary(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Result<StepResult> {
     loop {
-        print_summary(ui, config);
+        ui.summary(&build_summary_data(config));
 
         let choice = match ui.select("What next?", MAIN_OPTIONS, 1) {
             Ok(c) => c,
@@ -39,7 +39,9 @@ pub fn step_summary(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Re
     }
 }
 
-fn print_summary(ui: &dyn UserInterface, config: &SystemConfig) {
+fn build_summary_data(config: &SystemConfig) -> SummaryData {
+    let enterprise = matches!(config.mode, InstallMode::Enterprise { .. });
+
     let mode_label = match &config.mode {
         InstallMode::Guix => "Guix (libre only)".to_string(),
         InstallMode::Nonguix => "Nonguix (nonfree drivers)".to_string(),
@@ -47,77 +49,109 @@ fn print_summary(ui: &dyn UserInterface, config: &SystemConfig) {
         InstallMode::Enterprise { config_id, .. } => format!("Enterprise ({config_id})"),
     };
 
-    let disk_size = format_size(config.disk.size_bytes);
-    let disk_label = format!("{} ({disk_size})", config.disk.dev_path);
-
     let firmware_label = match config.firmware {
         Firmware::Efi => "UEFI",
         Firmware::Bios => "BIOS (legacy)",
     };
 
+    let mut system = vec![
+        SummaryRow::new("Mode", mode_label),
+        SummaryRow::new("Firmware", format!("{firmware_label} (auto-detected)")),
+    ];
+    if !enterprise {
+        let keyboard = config
+            .keyboard_layout
+            .clone()
+            .unwrap_or_else(|| "default".into());
+        system.push(SummaryRow::new("Hostname", config.hostname.clone()));
+        system.push(SummaryRow::new("Timezone", config.timezone.clone()));
+        system.push(SummaryRow::new("Locale", config.locale.clone()));
+        system.push(SummaryRow::new("Keyboard", keyboard));
+    }
+
+    let swap = if config.swap_size_mb == 0 {
+        "None".to_string()
+    } else {
+        format!("{} MB", config.swap_size_mb)
+    };
     let encryption = if config.encryption.is_some() {
         "Yes (LUKS)"
     } else {
         "No"
     };
+    let storage = vec![
+        SummaryRow::new(
+            "Disk",
+            format!(
+                "{} ({})",
+                config.disk.dev_path,
+                format_size(config.disk.size_bytes)
+            ),
+        ),
+        SummaryRow::new("Filesystem", config.filesystem.to_string()),
+        SummaryRow::new("Encryption", encryption),
+        SummaryRow::new("Swap", swap),
+    ];
 
-    let desktop = config
-        .desktop
-        .as_ref()
-        .map(|d| format!("{d}"))
-        .unwrap_or_else(|| "None (headless)".into());
+    let mut sections = vec![
+        SummarySection {
+            title: "System".into(),
+            rows: system,
+        },
+        SummarySection {
+            title: "Storage".into(),
+            rows: storage,
+        },
+    ];
 
-    ui.info("");
-    ui.info("=== Installation Summary ===");
-
-    if config.system_scm_override.is_some() {
-        ui.warn(
-            "Custom system.scm in use — fields below describe the current config \
-             but the installer will write your edited version verbatim and may \
-             not reflect them.",
-        );
-        ui.info("");
-    }
-
-    ui.info(&format!("Mode:           {mode_label}"));
-    ui.info(&format!("Firmware:       {firmware_label} (auto-detected)"));
-    ui.info(&format!("Disk:           {disk_label}"));
-    ui.info(&format!("Filesystem:     {}", config.filesystem));
-    ui.info(&format!("Encryption:     {encryption}"));
-
-    if !matches!(config.mode, InstallMode::Enterprise { .. }) {
-        ui.info(&format!("Hostname:       {}", config.hostname));
-        ui.info(&format!("Timezone:       {}", config.timezone));
-        ui.info(&format!("Locale:         {}", config.locale));
-        let username = config.users.first().map(|u| u.name.as_str()).unwrap_or("-");
-        ui.info(&format!("Username:       {username}"));
-        ui.info(&format!("Desktop:        {desktop}"));
+    if !enterprise {
+        let username = config
+            .users
+            .first()
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| "-".into());
+        let desktop = config
+            .desktop
+            .as_ref()
+            .map(|d| format!("{d}"))
+            .unwrap_or_else(|| "None (headless)".into());
         let ssh = if config.ssh_key.is_some() {
             "Set"
         } else {
             "Not set"
         };
-        ui.info(&format!("SSH key:        {ssh}"));
         let custom = if config.system_scm_override.is_some() {
             "Yes"
         } else {
             "No"
         };
-        ui.info(&format!("Custom config:  {custom}"));
+        sections.push(SummarySection {
+            title: "Account".into(),
+            rows: vec![
+                SummaryRow::new("User", username),
+                SummaryRow::new("Desktop", desktop),
+                SummaryRow::new("SSH key", ssh),
+                SummaryRow::new("Custom config", custom),
+            ],
+        });
     }
 
-    ui.info("");
-    ui.info("Partition layout:");
-    for line in partition_preview(config) {
-        ui.info(&format!("  {line}"));
-    }
+    let note = config.system_scm_override.is_some().then(|| {
+        "Custom system.scm in use — fields below describe the current config \
+         but the installer will write your edited version verbatim and may \
+         not reflect them."
+            .to_string()
+    });
 
-    ui.info("");
-    ui.warn(&format!(
-        "{} will be formatted. ALL DATA WILL BE LOST.",
-        config.disk.dev_path
-    ));
-    ui.info("");
+    SummaryData {
+        note,
+        sections,
+        layout: partition_preview(config),
+        warning: format!(
+            "{} will be formatted. ALL DATA WILL BE LOST.",
+            config.disk.dev_path
+        ),
+    }
 }
 
 fn partition_preview(config: &SystemConfig) -> Vec<String> {

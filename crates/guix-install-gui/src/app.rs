@@ -16,6 +16,7 @@ use iced::widget::{
 use iced::{Alignment, Element, Fill, Font, Length, Subscription, Task, Theme};
 
 use guix_install_core::steps::StepId;
+use guix_install_core::ui::SummaryData;
 
 use crate::bridge::{PromptRequest, PromptResponse, RailEntry, UiEvent};
 use crate::styles;
@@ -143,9 +144,8 @@ pub struct State {
     current_step: StepId,
     active: Active,
     log: Vec<String>,
-    /// Info/warn lines accumulated since the Summary step began; rendered as
-    /// the Summary body instead of vanishing into the rolling log.
-    summary: Vec<SummaryLine>,
+    /// Structured summary for the Summary step, rendered as grouped sections.
+    summary_data: Option<SummaryData>,
     /// Most recent warn/error to show inline under the active prompt.
     feedback: Option<Feedback>,
     finished: bool,
@@ -163,12 +163,6 @@ pub struct State {
     spinner_frame: usize,
     /// Scratch text for the Keyboard step's "type to test your layout" field.
     kbd_test: String,
-}
-
-#[derive(Clone)]
-struct SummaryLine {
-    text: String,
-    danger: bool,
 }
 
 #[derive(Clone)]
@@ -192,7 +186,7 @@ impl State {
             current_step: StepId::Network,
             active: Active::None,
             log: Vec::new(),
-            summary: Vec::new(),
+            summary_data: None,
             feedback: None,
             finished: false,
             dry_run,
@@ -511,7 +505,7 @@ impl State {
                 if current != self.current_step {
                     self.feedback = None;
                     if current == StepId::Summary {
-                        self.summary.clear();
+                        self.summary_data = None;
                     }
                 }
                 self.current_step = current;
@@ -519,28 +513,19 @@ impl State {
                 Task::none()
             }
             UiEvent::Info(m) => {
-                if self.current_step == StepId::Summary {
-                    self.summary.push(SummaryLine {
-                        text: m.clone(),
-                        danger: false,
-                    });
-                }
                 self.log.push(m);
                 Task::none()
             }
             UiEvent::Warn(m) => {
-                let danger = m.contains("ALL DATA WILL BE LOST");
                 self.feedback = Some(Feedback {
                     text: m.clone(),
-                    danger,
+                    danger: false,
                 });
-                if self.current_step == StepId::Summary {
-                    self.summary.push(SummaryLine {
-                        text: m.clone(),
-                        danger,
-                    });
-                }
                 self.log.push(format!("warning: {m}"));
+                Task::none()
+            }
+            UiEvent::Summary(data) => {
+                self.summary_data = Some(data);
                 Task::none()
             }
             UiEvent::Error(m) => {
@@ -1099,21 +1084,47 @@ impl State {
     fn view_summary(&self) -> Element<'_, Message> {
         let header = text("Summary").size(24).font(styles::BOLD);
 
-        let body = column(
-            self.summary
-                .iter()
-                .filter(|l| !l.text.trim().is_empty())
-                .map(|l| {
-                    let color = if l.danger {
-                        styles::DANGER
-                    } else {
-                        styles::TEXT
-                    };
-                    text(l.text.clone()).size(13).color(color).into()
-                })
-                .collect::<Vec<_>>(),
-        )
-        .spacing(4);
+        let mut body = column![].spacing(20);
+        if let Some(data) = &self.summary_data {
+            if let Some(note) = &data.note {
+                body = body.push(
+                    container(text(note.clone()).size(12).color(styles::WARNING))
+                        .padding(10)
+                        .width(Fill)
+                        .style(styles::warn_note),
+                );
+            }
+
+            for section in &data.sections {
+                let mut block = column![section_title(&section.title)].spacing(6);
+                for r in &section.rows {
+                    block = block.push(
+                        row![
+                            text(r.label.clone())
+                                .size(14)
+                                .color(styles::MUTED)
+                                .width(Length::Fixed(150.0)),
+                            text(r.value.clone()).size(14).color(styles::TEXT),
+                        ]
+                        .spacing(8),
+                    );
+                }
+                body = body.push(block);
+            }
+
+            if !data.layout.is_empty() {
+                let mut block = column![section_title("Layout")].spacing(4);
+                for line in &data.layout {
+                    block = block.push(
+                        text(line.clone())
+                            .size(13)
+                            .font(Font::MONOSPACE)
+                            .color(styles::TEXT),
+                    );
+                }
+                body = body.push(block);
+            }
+        }
 
         let card = container(scrollable(body).height(Fill))
             .padding(20)
@@ -1152,9 +1163,31 @@ impl State {
         };
 
         let mut col = column![header, Space::new().height(8), card].height(Fill);
-        if let Some(fb) = &self.feedback
-            && (!fb.danger || !fb.text.contains("ALL DATA WILL BE LOST"))
+
+        // Destructive-action banner, always visible above the action buttons.
+        if let Some(data) = &self.summary_data
+            && !data.warning.is_empty()
         {
+            col = col.push(Space::new().height(12));
+            col = col.push(
+                container(
+                    row![
+                        text("\u{26a0}").size(16).color(styles::DANGER),
+                        text(data.warning.clone())
+                            .size(14)
+                            .color(styles::DANGER)
+                            .font(styles::BOLD),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                )
+                .padding(12)
+                .width(Fill)
+                .style(styles::danger_banner),
+            );
+        }
+
+        if let Some(fb) = &self.feedback {
             col = col.push(Space::new().height(8));
             col = col.push(self.view_feedback(fb));
         }
@@ -1246,7 +1279,8 @@ fn read_tagline() -> String {
         .and_then(|s| {
             s.lines()
                 .map(|l| {
-                    l.split_whitespace()
+                    strip_ansi(l)
+                        .split_whitespace()
                         .filter(|w| !w.starts_with('\\') && !w.starts_with('%'))
                         .collect::<Vec<_>>()
                         .join(" ")
@@ -1255,6 +1289,30 @@ fn read_tagline() -> String {
                 .find(|l| l.len() > 3)
         })
         .unwrap_or_else(|| FALLBACK.to_string())
+}
+
+/// Drops ANSI CSI sequences (`ESC [ … final`) and any other control chars —
+/// `/etc/issue` colorizes its banner, which the GUI would otherwise show raw.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for n in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&n) {
+                        break;
+                    }
+                }
+            } else {
+                chars.next();
+            }
+        } else if !c.is_control() {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn is_summary_menu(options: &[String]) -> bool {
@@ -1287,6 +1345,15 @@ fn rail_row(active: bool) -> impl Fn(&Theme) -> iced::widget::container::Style {
 
 fn focus_input() -> Task<Message> {
     focus(iced::widget::Id::new(INPUT_ID))
+}
+
+/// A muted, upper-cased section heading for the grouped Summary screen.
+fn section_title(title: &str) -> Element<'static, Message> {
+    text(title.to_uppercase())
+        .size(11)
+        .font(styles::BOLD)
+        .color(styles::MUTED)
+        .into()
 }
 
 /// Original-vec indices whose option contains `filter` (case-insensitive).

@@ -13,6 +13,9 @@ use bridge::{IcedUi, UiEvent};
 
 const DEJAVU: &[u8] = include_bytes!("../assets/fonts/DejaVuSans.ttf");
 const DEJAVU_BOLD: &[u8] = include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf");
+// Monochrome Noto Emoji (OFL), subset to the glyphs DejaVu lacks (eye, lock);
+// cosmic-text falls back to it for those emoji codepoints.
+const NOTO_EMOJI: &[u8] = include_bytes!("../assets/fonts/NotoEmoji-subset.ttf");
 
 fn main() -> iced::Result {
     // Worker -> GUI: async channel the iced subscription drains.
@@ -79,5 +82,6 @@ fn main() -> iced::Result {
     .default_font(Font::with_name("DejaVu Sans"))
     .font(DEJAVU)
     .font(DEJAVU_BOLD)
+    .font(NOTO_EMOJI)
     .run()
 }

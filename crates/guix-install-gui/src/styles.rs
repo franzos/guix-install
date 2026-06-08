@@ -69,6 +69,34 @@ pub fn sidebar(_theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// Tinted banner for the destructive-action warning on the Summary screen.
+pub fn danger_banner(_theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgba(
+            0.902, 0.192, 0.192, 0.12,
+        ))),
+        border: Border {
+            color: Color::from_rgba(0.902, 0.192, 0.192, 0.45),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
+/// Tinted note used for the custom-system.scm caveat on the Summary screen.
+pub fn warn_note(_theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgba(1.0, 0.757, 0.027, 0.10))),
+        border: Border {
+            color: Color::from_rgba(1.0, 0.757, 0.027, 0.35),
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
 // -- Button styles --
 
 pub fn btn_primary(_theme: &iced::Theme, status: button::Status) -> button::Style {
