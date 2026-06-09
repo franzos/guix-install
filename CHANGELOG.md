@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.8] - 2026-06-09
+
+### Added
+- GUI About panel: version, authors, source, license, and credits.
+
+### Fixed
+- Online check probes substitute servers concurrently and fails fast on unreachable hosts, so a dead server no longer stalls the check.
+
 ## [0.1.7] - 2026-06-08
 
 ### Fixed

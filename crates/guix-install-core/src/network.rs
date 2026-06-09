@@ -1,5 +1,6 @@
 //! Shared network-connect orchestration over the connman module.
 
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -9,20 +10,67 @@ use crate::mode::InstallMode;
 use crate::ui::{UserInterface, is_cancelled};
 
 const SUBSTITUTE_PROBE_URL: &str = "https://bordeaux.guix.gnu.org/nix-cache-info";
-const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-const REACHABLE_BUDGET: Duration = Duration::from_secs(20);
+const REACHABLE_BUDGET: Duration = Duration::from_secs(30);
 const REACHABLE_BACKOFF: Duration = Duration::from_millis(1500);
 
-fn probe(url: &str) -> bool {
-    ureq::get(url).timeout(PROBE_TIMEOUT).call().is_ok()
+/// ureq 2.9's per-request `.timeout()` doesn't bound the TCP connect; an agent
+/// with `timeout_connect` does, so a host that drops SYNs fails in ~3s not ~30s.
+fn probe_agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(3))
+            .timeout_read(Duration::from_secs(4))
+            .timeout_write(Duration::from_secs(4))
+            .build()
+    })
 }
 
-/// True if any of the mode's substitute servers is reachable, with a bordeaux fallback.
+fn probe(url: &str) -> bool {
+    probe_agent().get(url).call().is_ok()
+}
+
+fn log_net(msg: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/guix-install-network.log")
+    {
+        let _ = writeln!(f, "{msg}");
+    }
+}
+
+/// True if any of the mode's substitute servers is reachable, with a bordeaux
+/// fallback. All targets are probed concurrently and the first success wins; a
+/// hard 5s round cap means one round can never exceed it.
 pub fn reachable(mode: &InstallMode) -> bool {
-    mode.substitute_urls()
+    let mut urls: Vec<String> = mode
+        .substitute_urls()
         .iter()
-        .any(|base| probe(&format!("{base}/nix-cache-info")))
-        || probe(SUBSTITUTE_PROBE_URL)
+        .map(|base| format!("{base}/nix-cache-info"))
+        .collect();
+    urls.push(SUBSTITUTE_PROBE_URL.to_string());
+    let n = urls.len();
+    let (tx, rx) = std::sync::mpsc::channel();
+    for url in urls {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(probe(&url));
+        });
+    }
+    drop(tx);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut done = 0;
+    while done < n {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(remaining) {
+            Ok(true) => return true,
+            Ok(false) => done += 1,
+            Err(_) => return false,
+        }
+    }
+    false
 }
 
 /// Patient variant of [`reachable`]: a freshly-connected link reports `ready`
@@ -30,11 +78,21 @@ pub fn reachable(mode: &InstallMode) -> bool {
 /// until reachable or the budget is spent.
 fn wait_reachable(mode: &InstallMode, budget: Duration) -> bool {
     let deadline = Instant::now() + budget;
+    let mut attempt = 0;
     loop {
-        if reachable(mode) {
+        attempt += 1;
+        let start = Instant::now();
+        let ok = reachable(mode);
+        log_net(&format!(
+            "reachable attempt {attempt}: {ok} ({}ms)",
+            start.elapsed().as_millis()
+        ));
+        if ok {
+            log_net("wait_reachable: success");
             return true;
         }
         if Instant::now() + REACHABLE_BACKOFF >= deadline {
+            log_net("wait_reachable: budget exhausted");
             return false;
         }
         std::thread::sleep(REACHABLE_BACKOFF);

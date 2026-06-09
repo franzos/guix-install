@@ -70,6 +70,8 @@ pub enum Message {
     SpinnerTick,
     /// Keyboard step: scratch "type to test your layout" text changed.
     KbdTestChanged(String),
+    /// Toggle the About panel in the content area (rail stays visible).
+    ToggleAbout,
 }
 
 /// The active prompt plus its in-progress local edit state.
@@ -163,6 +165,8 @@ pub struct State {
     spinner_frame: usize,
     /// Scratch text for the Keyboard step's "type to test your layout" field.
     kbd_test: String,
+    /// When true, the content area shows the About panel instead of the step.
+    about: bool,
 }
 
 #[derive(Clone)]
@@ -196,6 +200,7 @@ impl State {
             tagline: read_tagline(),
             spinner_frame: 0,
             kbd_test: String::new(),
+            about: false,
         };
         (state, focus_input())
     }
@@ -405,6 +410,10 @@ impl State {
                 self.kbd_test = s;
                 Task::none()
             }
+            Message::ToggleAbout => {
+                self.about = !self.about;
+                Task::none()
+            }
         }
     }
 
@@ -609,7 +618,12 @@ impl State {
     pub fn view(&self) -> Element<'_, Message> {
         // Cap and center the content column so forms stay readable from
         // 1024×768 up to 4K instead of stretching edge-to-edge.
-        let content = container(self.view_content())
+        let inner = if self.about {
+            self.view_about()
+        } else {
+            self.view_content()
+        };
+        let content = container(inner)
             .max_width(CONTENT_MAX_WIDTH)
             .width(Fill)
             .height(Fill)
@@ -657,7 +671,14 @@ impl State {
             items = items.push(row_box);
         }
 
-        container(items.padding(12).width(210))
+        let about_btn = button(text("\u{24d8} About").size(14))
+            .width(Fill)
+            .padding([10, 14])
+            .style(styles::nav_btn(self.about))
+            .on_press(Message::ToggleAbout);
+        let items = items.push(Space::new().height(Fill)).push(about_btn);
+
+        container(items.padding(12).width(210).height(Fill))
             .width(210)
             .height(Fill)
             .style(styles::sidebar)
@@ -844,6 +865,86 @@ impl State {
             .width(Fill)
             .height(Fill)
             .center_x(Fill)
+            .into()
+    }
+
+    /// About panel: version, authors, source, license, built-with.
+    /// URLs are plain text — this is an offline installer with no browser.
+    fn view_about(&self) -> Element<'_, Message> {
+        let header = text("About")
+            .size(24)
+            .font(styles::BOLD)
+            .color(styles::TEXT);
+
+        let version_card = about_info_card(
+            "Guix Installer",
+            format!(
+                "Version {}\nRust installer for Guix System",
+                env!("CARGO_PKG_VERSION")
+            ),
+        );
+
+        let authors_card = about_section_card(
+            "Authors",
+            column![text("Franz Geffke <m@f-a.nz>").size(13).color(styles::TEXT)].spacing(4),
+        );
+
+        let source_card = about_section_card(
+            "Source",
+            column![
+                text("Sources and issue tracker:")
+                    .size(13)
+                    .color(styles::MUTED),
+                text("https://github.com/franzos/guix-install")
+                    .size(13)
+                    .color(styles::PRIMARY),
+            ]
+            .spacing(6),
+        );
+
+        let license_card = about_section_card(
+            "License",
+            column![
+                text("GNU General Public License v3.0 only (GPL-3.0-only).")
+                    .size(13)
+                    .color(styles::TEXT),
+                text("This is free software; you are free to change and redistribute it.")
+                    .size(12)
+                    .color(styles::MUTED),
+            ]
+            .spacing(6),
+        );
+
+        let built_with_card = about_section_card(
+            "Built with",
+            column![
+                text(
+                    "iced (MIT / Apache-2.0) \u{b7} libguix (MIT / Apache-2.0) \u{b7} \
+                     tokio (MIT) \u{b7} serde (MIT / Apache-2.0) \u{b7} ureq (MIT / Apache-2.0) \u{b7} \
+                     rustix (Apache-2.0 / MIT) \u{b7} tar (MIT / Apache-2.0) \u{b7} \
+                     flate2 (MIT / Apache-2.0)"
+                )
+                .size(12)
+                .color(styles::MUTED),
+            ]
+            .spacing(6),
+        );
+
+        let body = column![
+            header,
+            version_card,
+            authors_card,
+            source_card,
+            license_card,
+            built_with_card,
+        ]
+        .spacing(16);
+
+        let scroll = scrollable(body).height(Length::Fill);
+        container(scroll)
+            .padding(24)
+            .width(Fill)
+            .height(Fill)
             .into()
     }
 
@@ -1345,6 +1446,39 @@ fn rail_row(active: bool) -> impl Fn(&Theme) -> iced::widget::container::Style {
 
 fn focus_input() -> Task<Message> {
     focus(iced::widget::Id::new(INPUT_ID))
+}
+
+/// About card with a large title and a muted body blurb.
+fn about_info_card<'a>(title: &'a str, body: String) -> Element<'a, Message> {
+    container(
+        column![
+            text(title).size(20).font(styles::BOLD).color(styles::TEXT),
+            text(body).size(13).color(styles::MUTED),
+        ]
+        .spacing(6),
+    )
+    .padding(20)
+    .width(Fill)
+    .style(styles::card)
+    .into()
+}
+
+/// About card with a section heading over an arbitrary body column.
+fn about_section_card<'a>(
+    title: &'a str,
+    body: iced::widget::Column<'a, Message>,
+) -> Element<'a, Message> {
+    container(
+        column![
+            text(title).size(16).font(styles::BOLD).color(styles::TEXT),
+            body
+        ]
+        .spacing(8),
+    )
+    .padding(20)
+    .width(Fill)
+    .style(styles::card)
+    .into()
 }
 
 /// A muted, upper-cased section heading for the grouped Summary screen.
