@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.9] - 2026-06-09
+
+### Fixed
+- Wi-Fi no longer drops mid-install: the provisioning file now persists for the session instead of being deleted.
+
 ## [0.1.8] - 2026-06-09
 
 ### Added

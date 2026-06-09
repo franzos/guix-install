@@ -283,15 +283,13 @@ pub(crate) fn render_provisioning(path: &str, name: &str, passphrase: &str) -> S
     format!("[service_{path}]\nType = wifi\nName = {name}\nPassphrase = {passphrase}\n")
 }
 
-/// Removes the provisioning file (and any leftover tmp) on drop — all paths.
-struct ProvisionGuard {
-    file: String,
-}
-impl Drop for ProvisionGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.file);
-        let _ = std::fs::remove_file(format!("{}.tmp", self.file));
-    }
+/// Removes the provisioning file (and any leftover tmp). For explicit
+/// end-of-session cleanup; reboot wipes the tmpfs ISO anyway.
+#[allow(dead_code)] // retained for a future final-cleanup step
+pub(crate) fn clear_provisioning() {
+    let file = provision_file();
+    let _ = std::fs::remove_file(&file);
+    let _ = std::fs::remove_file(format!("{file}.tmp"));
 }
 
 /// Connect to a service. For secured networks, writes a 0600 provisioning file
@@ -306,7 +304,7 @@ pub(crate) fn connect_with_deadline(
     passphrase: Option<&Zeroizing<String>>,
     timeout: Duration,
 ) -> Result<()> {
-    let _guard: Option<ProvisionGuard> = if let Some(pw) = passphrase {
+    if let Some(pw) = passphrase {
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
 
@@ -314,8 +312,9 @@ pub(crate) fn connect_with_deadline(
             bail!("Wi-Fi passphrase contains invalid characters");
         }
 
+        // The .config must persist for the whole session: deleting it makes
+        // connman disconnect the service and wipe its stored credentials.
         let file = provision_file();
-        let guard = ProvisionGuard { file: file.clone() };
         std::fs::create_dir_all(provision_dir()).ok();
         let tmp = format!("{file}.tmp");
         let body = render_provisioning(path, name, pw);
@@ -329,10 +328,7 @@ pub(crate) fn connect_with_deadline(
         f.sync_all().ok();
         drop(f);
         std::fs::rename(&tmp, &file)?; // atomic publish so connman never sees a partial file
-        Some(guard)
-    } else {
-        None
-    };
+    }
 
     // connmanctl `connect` can exit non-zero yet still associate; its failure is
     // already in the installer log. Let the poll decide and surface its message.
@@ -462,6 +458,19 @@ mod tests {
         assert!(body.contains("Type = wifi"));
         assert!(body.contains("Name = My Net"));
         assert!(body.contains("Passphrase = secret"));
+    }
+
+    #[test]
+    fn clear_provisioning_removes_file() {
+        let dir = std::env::temp_dir().join("guix-install-clear-prov");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("guix-install.config");
+        std::fs::write(&file, "x").unwrap();
+        // SAFETY: single-threaded test, no other connman call races this.
+        unsafe { std::env::set_var("GUIX_INSTALL_CONNMAN_DIR", &dir) };
+        clear_provisioning();
+        unsafe { std::env::remove_var("GUIX_INSTALL_CONNMAN_DIR") };
+        assert!(!file.exists());
     }
 
     #[test]

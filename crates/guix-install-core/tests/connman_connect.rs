@@ -36,8 +36,9 @@ fn connect_succeeds_when_service_goes_online() {
         Duration::from_secs(2),
     );
     assert!(r.is_ok(), "expected success, got {r:?}");
-    // provisioning file must be cleaned up
-    assert!(!dir.join("guix-install.config").exists());
+    // provisioning file must persist: deleting it makes connman disconnect and
+    // wipe credentials, killing the link mid-install.
+    assert!(dir.join("guix-install.config").exists());
 }
 
 #[test]
