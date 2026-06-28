@@ -7,6 +7,7 @@
 
 use std::sync::mpsc::Receiver as SyncReceiver;
 
+use guix_install_core::installer_log;
 use guix_install_core::steps::StepId;
 use guix_install_core::ui::{SummaryData, UserCancelled, UserInterface};
 use iced::futures::channel::mpsc::UnboundedSender;
@@ -167,8 +168,8 @@ fn summarize(s: &libguix::progress::Summary) -> String {
     );
 
     match active {
-        Some(item) => format!("{stage}: {item} — {tally}"),
-        None => format!("{stage} — {tally}"),
+        Some(item) => format!("{stage}: {item} - {tally}"),
+        None => format!("{stage} - {tally}"),
     }
 }
 
@@ -245,14 +246,17 @@ impl UserInterface for IcedUi {
 
     fn info(&self, msg: &str) {
         self.send(UiEvent::Info(msg.to_string()));
+        installer_log::write_line("info:", msg);
     }
 
     fn warn(&self, msg: &str) {
         self.send(UiEvent::Warn(msg.to_string()));
+        installer_log::write_line("warn:", msg);
     }
 
     fn error(&self, msg: &str) {
         self.send(UiEvent::Error(msg.to_string()));
+        installer_log::write_line("error:", msg);
     }
 
     fn summary(&self, data: &SummaryData) {

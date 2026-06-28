@@ -12,7 +12,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, anyhow, bail};
 use futures_util::StreamExt;
-use libguix::progress::{Failure, Summary};
+use libguix::progress::{BuildStatus, Failure, Summary};
 use libguix::{BuildOptions, Guix, InitOptions, Privilege, SystemPullOptions};
 
 use crate::progress::{self, Phase};
@@ -139,8 +139,44 @@ async fn drive(
         ui.guix_progress(&summary);
     }
 
-    match exit_code {
-        Some(0) => Ok(()),
-        Some(_) | None => bail!("{}", failure_message(&summary, op_name)),
+    if exit_code == Some(0) {
+        return Ok(());
     }
+
+    let msg = failure_message(&summary, op_name);
+    crate::installer_log::write_line("guix-fail:", &msg);
+    if let Some(line) = &summary.last_status_line {
+        crate::installer_log::write_line("guix-fail:", &format!("last: {line}"));
+    }
+
+    let failed: Vec<String> = summary
+        .builds
+        .values()
+        .filter(|b| b.status == BuildStatus::Failed)
+        .map(|b| b.drv.clone())
+        .collect();
+
+    let mut tail = String::new();
+    for drv in &failed {
+        if let Ok(out) = crate::exec::run_cmd(&["guix", "log", drv.as_str()])
+            && !out.stdout.is_empty()
+        {
+            crate::installer_log::write_line("build-log:", &format!("{drv}\n{}", out.stdout));
+            tail = out.stdout;
+        }
+    }
+
+    let mut screen = msg.clone();
+    if let Some(line) = &summary.last_status_line {
+        screen.push_str(&format!("\n{line}"));
+    }
+    if !tail.is_empty() {
+        let lines: Vec<&str> = tail.lines().collect();
+        let start = lines.len().saturating_sub(30);
+        screen.push_str("\n--- build log (tail) ---\n");
+        screen.push_str(&lines[start..].join("\n"));
+    }
+    ui.error(&screen);
+
+    bail!("{}", msg)
 }

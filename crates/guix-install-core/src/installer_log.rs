@@ -1,22 +1,28 @@
-//! Append-only log mirrored to a file on the target filesystem.
+//! Append-only log fanned out to one or more file sinks.
 //!
-//! Once `phase_mount` has populated `/mnt`, [`open`] is called with
-//! `/mnt/var/log/guix-install.log` so subsequent UI lines (`info`/`warn`/`error`)
-//! and shell-out invocations from `exec` are recorded. The file survives the
-//! install reboot and is a useful artifact for bug reports.
+//! Two sinks are used over an install. A live sink at [`LIVE_LOG_PATH`] is
+//! opened at the start of the interview, so wizard activity (network, channel,
+//! config errors) is captured before any disk work. A target sink at
+//! [`TARGET_LOG_PATH`] is opened once the install root is mounted; it survives
+//! the install reboot and is a useful artifact for bug reports.
 //!
-//! Calls before [`open`] are silently dropped — the live ISO has no obvious
-//! place to put them, and stderr is already shown to the user.
+//! UI lines (`info`/`warn`/`error`) and shell-out invocations from `exec` are
+//! mirrored to every open sink. Calls made before any [`open`] are dropped.
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 
-static LOG: Mutex<Option<BufWriter<File>>> = Mutex::new(None);
+/// Live sink on the ISO overlay, opened at the start of the interview.
+pub const LIVE_LOG_PATH: &str = "/var/log/guix-install.log";
+/// Target sink under `/mnt`, opened once the install root is mounted.
+pub const TARGET_LOG_PATH: &str = "/mnt/var/log/guix-install.log";
+
+static LOG: Mutex<Vec<(PathBuf, BufWriter<File>)>> = Mutex::new(Vec::new());
 
 /// Opens the log file (0600), creating its parent directory if needed.
 ///
@@ -24,6 +30,11 @@ static LOG: Mutex<Option<BufWriter<File>>> = Mutex::new(None);
 /// and survives the install reboot. It contains argv lines and command stderr,
 /// which on a multi-user system shouldn't be readable to unprivileged accounts.
 pub fn open(path: &Path) -> Result<()> {
+    if let Ok(guard) = LOG.lock()
+        && guard.iter().any(|(p, _)| p == path)
+    {
+        return Ok(());
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create log dir {}", parent.display()))?;
@@ -35,28 +46,32 @@ pub fn open(path: &Path) -> Result<()> {
         .open(path)
         .with_context(|| format!("open log {}", path.display()))?;
     if let Ok(mut guard) = LOG.lock() {
-        *guard = Some(BufWriter::new(file));
+        if guard.iter().any(|(p, _)| p == path) {
+            return Ok(());
+        }
+        guard.push((path.to_path_buf(), BufWriter::new(file)));
     }
     write_line("session:", "log opened");
     Ok(())
 }
 
-/// Flushes and drops the log file handle. Idempotent. Tolerates a poisoned
-/// mutex by silently dropping the handle rather than panicking.
+/// Flushes and drops all log sinks. Idempotent. Tolerates a poisoned mutex by
+/// silently dropping the handles rather than panicking.
 pub fn close() {
     let Ok(mut guard) = LOG.lock() else { return };
-    if let Some(mut w) = guard.take() {
-        let _ = writeln!(w, "[{}] session: log closed", unix_seconds());
-        let _ = w.flush();
+    for w in guard.iter_mut() {
+        let _ = writeln!(w.1, "[{}] session: log closed", unix_seconds());
+        let _ = w.1.flush();
     }
+    guard.clear();
 }
 
-/// Appends a single timestamped line. No-op if the file isn't open.
+/// Appends a single timestamped line to every open sink. No-op if none are open.
 pub fn write_line(prefix: &str, msg: &str) {
     let Ok(mut guard) = LOG.lock() else { return };
-    if let Some(w) = guard.as_mut() {
-        let _ = writeln!(w, "[{}] {prefix} {msg}", unix_seconds());
-        let _ = w.flush();
+    for w in guard.iter_mut() {
+        let _ = writeln!(w.1, "[{}] {prefix} {msg}", unix_seconds());
+        let _ = w.1.flush();
     }
 }
 
@@ -103,5 +118,47 @@ mod tests {
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "log must be 0600 (got {mode:o})");
+    }
+
+    #[test]
+    fn two_sinks_both_receive_writes() {
+        let _g = test_lock();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.log");
+        let b = tmp.path().join("b.log");
+        open(&a).unwrap();
+        open(&b).unwrap();
+        write_line("phase:", "fanout");
+        close();
+
+        let ba = std::fs::read_to_string(&a).unwrap();
+        let bb = std::fs::read_to_string(&b).unwrap();
+        assert!(ba.contains("phase: fanout"), "sink a missing line: {ba}");
+        assert!(bb.contains("phase: fanout"), "sink b missing line: {bb}");
+    }
+
+    #[test]
+    fn open_same_path_twice_is_one_sink() {
+        let _g = test_lock();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("dup.log");
+        open(&path).unwrap();
+        open(&path).unwrap();
+        write_line("phase:", "once");
+        close();
+
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            body.matches("session: log opened").count(),
+            1,
+            "log opened should appear once: {body}"
+        );
+        assert_eq!(
+            body.matches("phase: once").count(),
+            1,
+            "single sink should write the line once: {body}"
+        );
     }
 }

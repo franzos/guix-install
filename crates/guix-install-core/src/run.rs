@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::config::SystemConfig;
 use crate::install;
+use crate::installer_log;
 use crate::resume::InstallState;
 use crate::scheme::operating_system::render_operating_system;
 use crate::steps::desktop::step_desktop;
@@ -66,6 +67,8 @@ pub fn handle_resume(
 /// navigator, prints the generated config, and runs the install unless
 /// `dry_run` is set.
 pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> {
+    let _ = installer_log::open(std::path::Path::new(installer_log::LIVE_LOG_PATH));
+
     ui.info("guix-install — Guix System Installer");
     ui.info("");
 

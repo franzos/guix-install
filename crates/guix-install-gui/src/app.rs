@@ -886,7 +886,12 @@ impl State {
 
         let authors_card = about_section_card(
             "Authors",
-            column![text("Franz Geffke <m@f-a.nz>").size(13).color(styles::TEXT)].spacing(4),
+            column![
+                text("Franz Geffke <mail@gofranz.com>")
+                    .size(13)
+                    .color(styles::TEXT)
+            ]
+            .spacing(4),
         );
 
         let source_card = about_section_card(

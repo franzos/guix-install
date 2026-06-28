@@ -16,7 +16,6 @@ const NONGUIX_KEY: &str = include_str!("../keys/substitutes.nonguix.org.pub");
 const GOFRANZ_KEY: &str = include_str!("../keys/substitutes.guix.gofranz.com.pub");
 
 const TARGET_DIR: &str = "/mnt";
-const LOG_PATH: &str = "/mnt/var/log/guix-install.log";
 
 const GUIX_DB_FILE: &str = "/var/guix/db/db.sqlite";
 const GUIX_DB_SAVE: &str = "/var/guix/db/db.save";
@@ -232,6 +231,7 @@ pub fn execute_installation(config: &SystemConfig, ui: &dyn UserInterface) -> Re
     check_connectivity(ui);
 
     install_locale_early(config);
+
     // NOTE: do NOT enter a private mount namespace here. We invoke
     // `herd start cow-store /mnt`, which dispatches to shepherd (PID 1)
     // running in the host namespace; if our `/mnt` mount is hidden from
@@ -397,10 +397,16 @@ fn phase_mount(
 
     // Now that /mnt is writable, redirect installer logs there so they
     // survive into the booted system.
-    if let Err(e) = installer_log::open(Path::new(LOG_PATH)) {
-        ui.warn(&format!("could not open installer log {LOG_PATH}: {e}"));
+    if let Err(e) = installer_log::open(Path::new(installer_log::TARGET_LOG_PATH)) {
+        ui.warn(&format!(
+            "could not open installer log {}: {e}",
+            installer_log::TARGET_LOG_PATH
+        ));
     } else {
-        ui.info(&format!("  Installer log: {LOG_PATH}"));
+        ui.info(&format!(
+            "  Installer log: {}",
+            installer_log::TARGET_LOG_PATH
+        ));
     }
     Ok(())
 }
@@ -567,7 +573,8 @@ fn phase_install(
 
     ui.info("Installation complete! You can now reboot.");
     ui.info(&format!(
-        "  Logs preserved at {LOG_PATH} (inside the new system)."
+        "  Logs preserved at {} (inside the new system).",
+        installer_log::TARGET_LOG_PATH
     ));
     Ok(())
 }

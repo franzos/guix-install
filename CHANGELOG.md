@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.10] - 2026-06-28
+
+### Fixed
+- GUI writes the full session to the installer log, same as the CLI.
+- Installer log opens at interview start, capturing wizard errors too.
+- Failed guix builds now log and show the build-log tail on the error screen.
+- About panel: corrected author email.
+
 ## [0.1.9] - 2026-06-09
 
 ### Fixed
