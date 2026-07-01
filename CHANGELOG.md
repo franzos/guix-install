@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.11] - 2026-07-01
+
+### Changed
+- Panther desktop installs now include the graphical Guix frontend (guix-gui).
+
 ## [0.1.10] - 2026-06-28
 
 ### Fixed

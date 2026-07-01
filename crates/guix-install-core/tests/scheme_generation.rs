@@ -79,6 +79,7 @@ fn panther_efi_plain_ext4_gnome() {
     assert!(output.contains("(px system os)"));
     assert!(output.contains("gnome-desktop-service-type"));
     assert!(output.contains("%os-desktop-services"));
+    assert!(output.contains("%os-desktop-packages"));
     assert!(output.contains("\"ext4\""));
     assert!(output.contains("/boot/efi"));
     assert!(!output.contains("luks-device-mapping"));
@@ -103,6 +104,8 @@ fn panther_bios_luks_ext4_headless() {
     assert_scheme_structure(&output);
     assert!(output.contains("(inherit %os-base)"));
     assert!(output.contains("grub-bootloader"));
+    // Headless inherits %os-base-packages via (inherit %os-base); no explicit line.
+    assert!(!output.contains("(packages"));
     assert!(output.contains("luks-device-mapping"));
     assert!(output.contains("/dev/mapper/cryptroot"));
     assert!(output.contains("dependencies mapped-devices"));

@@ -45,7 +45,6 @@ fn render_os_form(config: &SystemConfig) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     let inherit = render_inherit(config);
-    let has_inherit = inherit.is_some();
 
     parts.push("(operating-system".into());
 
@@ -85,9 +84,9 @@ fn render_os_form(config: &SystemConfig) -> String {
     parts.push(String::new());
     parts.push(render_users(config));
 
-    if !has_inherit {
+    if let Some(packages) = render_packages(config) {
         parts.push(String::new());
-        parts.push(render_packages(config));
+        parts.push(packages);
     }
 
     parts.push(String::new());
@@ -269,14 +268,18 @@ fn render_users(config: &SystemConfig) -> String {
     parts.join("\n")
 }
 
-fn render_packages(config: &SystemConfig) -> String {
+fn render_packages(config: &SystemConfig) -> Option<String> {
     match &config.mode {
-        // (px system os) does not export a desktop-specific package list;
-        // %os-base-packages covers both. Hardware-token / blueman extras the
-        // old %panther-desktop-packages bundled can be re-added via Advanced
-        // > Edit system.scm.
-        InstallMode::Panther => "  (packages %os-base-packages)".into(),
-        _ => "  (packages %base-packages)".into(),
+        // Desktop overrides the packages inherited from %os-base with
+        // %os-desktop-packages, which adds the graphical Guix frontend (guix-gui).
+        // Headless inherits %os-base-packages via (inherit %os-base), so no line.
+        // Hardware-token / blueman extras the old %panther-desktop-packages
+        // bundled can be re-added via Advanced > Edit system.scm.
+        InstallMode::Panther if config.desktop.is_some() => {
+            Some("  (packages %os-desktop-packages)".into())
+        }
+        InstallMode::Panther => None,
+        _ => Some("  (packages %base-packages)".into()),
     }
 }
 
