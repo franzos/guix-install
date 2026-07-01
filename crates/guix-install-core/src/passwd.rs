@@ -5,10 +5,79 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
-use pwhash::sha512_crypt;
+use rand::Rng;
+use sha_crypt::{Params, sha512_crypt};
 use zeroize::Zeroizing;
 
 use crate::config::UserAccount;
+
+/// crypt(3) base64 alphabet (note: not standard base64), least-significant 6
+/// bits first.
+const CRYPT64: &[u8; 64] = b"./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+/// Generate a 16-character salt from the crypt(3) alphabet. 16 is the maximum
+/// crypt(3) honors for `$6$`; going over is silently truncated on login, which
+/// is the bug the old sha-crypt `sha512_simple` path hit (22-char salts).
+fn gen_salt() -> String {
+    let mut rng = rand::thread_rng();
+    (0..16)
+        .map(|_| CRYPT64[rng.gen_range(0..CRYPT64.len())] as char)
+        .collect()
+}
+
+/// Emit `n` crypt(3) base64 characters from the 24-bit value `(b2<<16)|(b1<<8)|b0`.
+fn b64_from_24bit(out: &mut String, b2: u8, b1: u8, b0: u8, n: usize) {
+    let mut w = (u32::from(b2) << 16) | (u32::from(b1) << 8) | u32::from(b0);
+    for _ in 0..n {
+        out.push(CRYPT64[(w & 0x3f) as usize] as char);
+        w >>= 6;
+    }
+}
+
+/// Encode a 64-byte SHA-512 digest into the 86-char crypt(3) hash field.
+///
+/// The byte permutation is glibc's (`sha512-crypt.c`); it is not a plain
+/// base64 of the digest.
+fn sha512_crypt_b64(d: &[u8; 64]) -> String {
+    // Each triple picks three digest bytes in glibc's fixed order.
+    const TRIPLES: [(usize, usize, usize); 21] = [
+        (0, 21, 42),
+        (22, 43, 1),
+        (44, 2, 23),
+        (3, 24, 45),
+        (25, 46, 4),
+        (47, 5, 26),
+        (6, 27, 48),
+        (28, 49, 7),
+        (50, 8, 29),
+        (9, 30, 51),
+        (31, 52, 10),
+        (53, 11, 32),
+        (12, 33, 54),
+        (34, 55, 13),
+        (56, 14, 35),
+        (15, 36, 57),
+        (37, 58, 16),
+        (59, 17, 38),
+        (18, 39, 60),
+        (40, 61, 19),
+        (62, 20, 41),
+    ];
+    let mut out = String::with_capacity(86);
+    for (a, b, c) in TRIPLES {
+        b64_from_24bit(&mut out, d[a], d[b], d[c], 4);
+    }
+    b64_from_24bit(&mut out, 0, 0, d[63], 2);
+    out
+}
+
+/// Produce a glibc-compatible `$6$<salt>$<hash>` SHA-512 crypt string for the
+/// given password and 16-char salt, using the crypt(3) default of 5000 rounds
+/// (so no `rounds=` segment is emitted).
+fn crypt_sha512(password: &str, salt: &str) -> String {
+    let digest = sha512_crypt(password.as_bytes(), salt.as_bytes(), Params::default());
+    format!("$6${salt}${}", sha512_crypt_b64(&digest))
+}
 
 /// Seed `<root>/etc/shadow` with one line per user before `guix system init`.
 ///
@@ -23,10 +92,10 @@ use crate::config::UserAccount;
 /// the install). The hash never lands in `system.scm` or the store; the
 /// plaintext is held in `Zeroizing` so it's wiped on drop.
 pub fn seed_shadow(root: &Path, users: &[UserAccount], password: &Zeroizing<String>) -> Result<()> {
-    // pwhash emits glibc-compatible $6$<16-char salt>$<digest> output.
-    // sha-crypt 0.6 produced 22-char salts that crypt(3) silently truncates,
-    // making the stored hash unverifiable on login.
-    let hash = sha512_crypt::hash(password.as_str()).map_err(|e| anyhow!("sha512 hash: {e}"))?;
+    // sha-crypt's low-level digest + our own 16-char salt: crypt(3) only honors
+    // the first 16 salt chars for $6$, so we cap it ourselves rather than let a
+    // longer generated salt get silently truncated (unverifiable on login).
+    let hash = crypt_sha512(password.as_str(), &gen_salt());
 
     // libc's `isexpired` treats a lastchange of 0 as "expired" — clamp to 1.
     let last_change = (SystemTime::now()
@@ -155,16 +224,32 @@ mod tests {
         );
     }
 
+    /// Known-answer test: our `$6$` output must byte-match an independent
+    /// implementation for the same password and salt. Ground truth generated
+    /// with `openssl passwd -6 -salt abcdefghijklmnop hunter2` (crypt(3)
+    /// default of 5000 rounds).
     #[test]
-    fn seed_shadow_round_trips_via_pwhash_verify() {
+    fn crypt_sha512_matches_openssl_known_answer() {
+        let expected = "$6$abcdefghijklmnop$EC.xeLW9zNWcX0r23FSpQaV7PG.Ibd4QnLe3w6UC47i3/vkPQouEDwvUpGtqFiad5mzQG96cD/LywQiXv9WfH/";
+        assert_eq!(crypt_sha512("hunter2", "abcdefghijklmnop"), expected);
+    }
+
+    #[test]
+    fn crypt_sha512_hash_field_is_86_chars() {
+        let hash = crypt_sha512("hunter2", "abcdefghijklmnop");
+        let field = hash.rsplit_once('$').unwrap().1;
+        assert_eq!(field.len(), 86);
+    }
+
+    #[test]
+    fn seed_shadow_generates_a_fresh_salt_each_time() {
         let tmp = tempfile::tempdir().unwrap();
         let pw = Zeroizing::new("hunter2".to_string());
         seed_shadow(tmp.path(), &[user("alice")], &pw).unwrap();
-
-        let content = fs::read_to_string(tmp.path().join("etc/shadow")).unwrap();
-        let hash = content.lines().next().unwrap().split(':').nth(1).unwrap();
-        assert!(pwhash::unix::verify("hunter2", hash));
-        assert!(!pwhash::unix::verify("wrong", hash));
+        let first = fs::read_to_string(tmp.path().join("etc/shadow")).unwrap();
+        seed_shadow(tmp.path(), &[user("alice")], &pw).unwrap();
+        let second = fs::read_to_string(tmp.path().join("etc/shadow")).unwrap();
+        assert_ne!(first, second, "random salt should differ between runs");
     }
 
     #[test]

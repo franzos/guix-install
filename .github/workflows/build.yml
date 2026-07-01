@@ -6,22 +6,29 @@ on:
     tags: ['v*']
   pull_request:
 
+# Least-privilege default. The writes needed to publish a release and its
+# provenance live on the release/provenance jobs below, not here.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: build (x86_64 musl)
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           targets: x86_64-unknown-linux-musl
 
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       # The GUI crate (guix-install-gui) links iced/winit against system
       # libraries and can't be a static-musl build, so it's excluded here.
@@ -37,17 +44,49 @@ jobs:
           file target/x86_64-unknown-linux-musl/release/guix-install
           cp target/x86_64-unknown-linux-musl/release/guix-install guix-install-x86_64-linux-musl
 
-      - uses: actions/upload-artifact@v4
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      # Hash the exact bytes we ship (after strip); the SLSA generator signs
+      # provenance over this digest, so it must match the uploaded artifact.
+      - name: Hash release binary
+        id: hash
+        run: echo "hashes=$(sha256sum guix-install-x86_64-linux-musl | base64 -w0)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: guix-install-x86_64-linux-musl
           path: guix-install-x86_64-linux-musl
           retention-days: 30
 
+  release:
+    name: release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release and upload the binary
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: guix-install-x86_64-linux-musl
+
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           files: guix-install-x86_64-linux-musl
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+  provenance:
+    name: SLSA provenance
+    needs: [build, release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      actions: read # read the workflow path for the provenance
+      id-token: write # keyless (Sigstore) signing via OIDC
+      contents: write # attach the provenance to the release
+    # Pinned by tag, not SHA: slsa-verifier resolves the trusted builder by
+    # semver tag, so a SHA pin would break verification (Scorecard's
+    # Pinned-Dependencies has a carve-out for this reusable workflow).
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.build.outputs.hashes }}
+      upload-assets: true

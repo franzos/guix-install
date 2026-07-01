@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.12] - 2026-07-01
+
+### Added
+- Release binaries now carry SLSA build provenance.
+- Security policy (SECURITY.md) and OpenSSF Scorecard badge.
+
+### Fixed
+- Updated TLS stack, closing certificate-validation advisories in the config fetch.
+
 ## [0.1.11] - 2026-07-01
 
 ### Changed

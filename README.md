@@ -6,6 +6,10 @@
 <p align="center">
   Guix System installer. Boot a Guix ISO, run one binary, get a working system — libre Guix, Nonguix, PantherX, or an enterprise config from a server.
 </p>
+<p align="center">
+  <a href="https://github.com/franzos/guix-install/actions/workflows/build.yml"><img src="https://github.com/franzos/guix-install/actions/workflows/build.yml/badge.svg" alt="build"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/franzos/guix-install"><img src="https://api.scorecard.dev/projects/github.com/franzos/guix-install/badge" alt="OpenSSF Scorecard"></a>
+</p>
 
 ## Why
 
