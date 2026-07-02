@@ -55,13 +55,9 @@ On the **PantherX ISO** the binary is pre-installed — just run:
 guix-install
 ```
 
-Latest PantherX ISO (2.2 GB, BIOS + UEFI, x86_64):
+Get the latest PantherX ISO (BIOS + UEFI, x86_64) from the wiki:
 
-```
-https://temp.pantherx.org/1xnvrrk5n25llks8pjx64f2kb3nfasn4-image.iso
-```
-
-Hash (Guix nix-base32, SHA-256): `0vvnfzw6y52z1qd2k60jcxw9r5y9mfvp9s1p4nj53ii4l3gyhbmg`
+https://wiki.pantherx.org/
 
 On a **plain Guix ISO** (or anywhere else), grab the static musl binary from a release:
 
