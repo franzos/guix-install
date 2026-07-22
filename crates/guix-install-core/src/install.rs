@@ -459,7 +459,13 @@ fn phase_config(
         std::fs::write("/mnt/etc/system.scm", &system_scm)?;
         ui.info("  Wrote /mnt/etc/system.scm");
 
-        if let Some(channels) = scheme::channels::render_channels(&config.mode) {
+        // Nonguix declares its channels via the guix service in system.scm
+        // (channels field), so the running system manages /etc/guix/channels.scm
+        // itself. Writing it here too would leave a stray channels.scm.bak on
+        // first boot, so skip the direct write for Nonguix.
+        if !matches!(config.mode, InstallMode::Nonguix)
+            && let Some(channels) = scheme::channels::render_channels(&config.mode)
+        {
             std::fs::write("/mnt/etc/guix/channels.scm", &channels)?;
             ui.info("  Wrote /mnt/etc/guix/channels.scm");
         }
@@ -597,8 +603,10 @@ mod tests {
 
     #[test]
     fn channels_available_guix_always_true() {
-        let mut config = SystemConfig::default();
-        config.mode = InstallMode::Guix;
+        let config = SystemConfig {
+            mode: InstallMode::Guix,
+            ..SystemConfig::default()
+        };
         assert!(channels_available(&config));
     }
 

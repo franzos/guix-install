@@ -135,6 +135,11 @@ fn nonguix_efi_plain_ext4_xfce() {
     assert!(output.contains("%desktop-services"));
     assert!(output.contains("%base-packages"));
     assert!(!output.contains("panther"));
+    // Nonguix bakes the channel into the installed guix service.
+    assert!(output.contains("modify-services"));
+    assert!(output.contains("guix-for-channels"));
+    assert!(output.contains("%nonguix-channels"));
+    assert!(output.contains("substitutes.nonguix.org"));
 }
 
 // --- Nonguix + BIOS + LUKS + btrfs + no desktop ---
@@ -159,6 +164,10 @@ fn nonguix_bios_luks_btrfs_headless() {
     assert!(output.contains("/dev/mapper/cryptroot"));
     assert!(output.contains("(kernel linux)"));
     assert!(!output.contains("/boot/efi"));
+    assert!(output.contains("modify-services"));
+    assert!(output.contains("guix-for-channels"));
+    assert!(output.contains("%nonguix-channels"));
+    assert!(output.contains("substitutes.nonguix.org"));
 }
 
 // --- Guix + EFI + no encryption + ext4 + Gnome ---

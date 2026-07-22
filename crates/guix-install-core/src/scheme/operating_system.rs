@@ -7,13 +7,44 @@ pub fn render_operating_system(config: &SystemConfig) -> String {
         return String::new();
     }
 
-    let sections: Vec<String> = vec![
-        render_use_modules(config),
-        String::new(),
-        render_os_form(config),
-    ];
+    let mut sections: Vec<String> = vec![render_use_modules(config), String::new()];
+
+    // Nonguix bakes the nonguix channel + substitute key into the installed
+    // system's guix service (see render_nonguix_services), so `guix describe`
+    // lists nonguix out of the box. These top-level defines feed that.
+    if matches!(config.mode, InstallMode::Nonguix) {
+        sections.push(render_nonguix_defines());
+        sections.push(String::new());
+    }
+
+    sections.push(render_os_form(config));
 
     sections.join("\n")
+}
+
+/// Nonguix-only top-level defines: the channel list baked into the guix service,
+/// plus the substitute server's public key as a file-like object.
+fn render_nonguix_defines() -> String {
+    // 9-space continuation indent aligns the channel form under `(cons* (channel`.
+    let channel = crate::scheme::channels::nonguix_channel_form("         ");
+    let key = escape_scheme_string(include_str!("../../keys/substitutes.nonguix.org.pub"));
+
+    format!(
+        "(define %nonguix-channels\n\
+         \x20 (cons* {channel}\n\
+         \x20        %default-channels))\n\
+         \n\
+         (define %nonguix-substitute-key\n\
+         \x20 (plain-file \"substitutes.nonguix.org.pub\"\n\
+         \x20  \"{key}\"))"
+    )
+}
+
+/// Escape a string for embedding as a Scheme string literal. Only backslash and
+/// double-quote are special; newlines stay literal (valid inside Scheme strings,
+/// and `read` ignores the resulting whitespace between s-expression tokens).
+fn escape_scheme_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn render_use_modules(config: &SystemConfig) -> String {
@@ -26,9 +57,18 @@ fn render_use_modules(config: &SystemConfig) -> String {
         }
         InstallMode::Nonguix => {
             lines.push("(use-modules (gnu))".into());
-            lines.push("(use-service-modules networking ssh desktop)".into());
+            // `base` -> guix-service-type, guix-configuration,
+            // %default-authorized-guix-keys, %default-substitute-urls.
+            lines.push("(use-service-modules networking ssh desktop base)".into());
             lines.push("(use-modules (nongnu packages linux))".into());
             lines.push("(use-modules (nongnu system linux-initrd))".into());
+            // guix-for-channels lives here, not in (guix channels).
+            lines.push("(use-modules (gnu packages package-management))".into());
+            // channel, make-channel-introduction, openpgp-fingerprint,
+            // %default-channels.
+            lines.push("(use-modules (guix channels))".into());
+            // plain-file for the substitute key.
+            lines.push("(use-modules (guix gexp))".into());
         }
         InstallMode::Panther => {
             lines.push("(use-modules (gnu))".into());
@@ -286,8 +326,55 @@ fn render_packages(config: &SystemConfig) -> Option<String> {
 fn render_services(config: &SystemConfig) -> String {
     match &config.mode {
         InstallMode::Panther => render_panther_services(config),
+        InstallMode::Nonguix => render_nonguix_services(config),
         _ => render_standard_services(config),
     }
+}
+
+fn render_nonguix_services(config: &SystemConfig) -> String {
+    // Same base service list as the standard path, but wrapped in
+    // modify-services so the guix-service-type instance already present in
+    // %base-services/%desktop-services is rewritten to build the system's guix
+    // from the nonguix channel and authorize its substitute server + key. This
+    // gives the installed system nonguix provenance (`guix describe`) and usable
+    // channel modules without a manual `guix pull`, at the cost of building
+    // guix-for-channels during `guix system init`.
+    let mut service_list: Vec<String> = Vec::new();
+
+    let base = if config.desktop.is_some() {
+        "%desktop-services"
+    } else {
+        service_list.push("(service dhcpcd-service-type)".into());
+        "%base-services"
+    };
+
+    if let Some(de) = &config.desktop {
+        service_list.push(desktop_service(de));
+    }
+
+    service_list.push("(service openssh-service-type)".into());
+
+    let svcs = service_list
+        .iter()
+        .map(|s| format!("                            {s}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "  (services\n\
+         \x20  (modify-services (append (list\n\
+         {svcs})\n\
+         \x20                           {base})\n\
+         \x20    (guix-service-type config =>\n\
+         \x20      (guix-configuration\n\
+         \x20        (inherit config)\n\
+         \x20        (guix (guix-for-channels %nonguix-channels))\n\
+         \x20        (channels %nonguix-channels)\n\
+         \x20        (substitute-urls (cons \"https://substitutes.nonguix.org\"\n\
+         \x20                               %default-substitute-urls))\n\
+         \x20        (authorized-keys (cons %nonguix-substitute-key\n\
+         \x20                               %default-authorized-guix-keys))))))"
+    )
 }
 
 fn render_panther_services(config: &SystemConfig) -> String {
