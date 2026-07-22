@@ -18,6 +18,16 @@ pub trait UserInterface {
     fn error(&self, msg: &str);
     fn progress(&self, msg: &str, pct: Option<f32>);
 
+    /// Reports a mode-specific "next steps" note after a successful install.
+    ///
+    /// Default impl prints it via `info` (the CLI), with a leading blank line to
+    /// separate it from the completion message. The GUI overrides this to
+    /// surface it on the completion screen, which does not render the info log.
+    fn completion_note(&self, note: &str) {
+        self.info("");
+        self.info(note);
+    }
+
     /// Renders the pre-install configuration summary.
     ///
     /// The default impl flattens `data` into `info`/`warn` lines — the CLI

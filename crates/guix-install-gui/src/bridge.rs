@@ -89,6 +89,8 @@ pub enum UiEvent {
         summary: String,
         detail: String,
     },
+    /// Mode-specific "next steps" note to show on the completion screen.
+    CompletionNote(String),
     /// The worker's run loop returned; the install/interview is finished.
     Finished,
 }
@@ -261,6 +263,11 @@ impl UserInterface for IcedUi {
 
     fn summary(&self, data: &SummaryData) {
         self.send(UiEvent::Summary(data.clone()));
+    }
+
+    fn completion_note(&self, note: &str) {
+        self.send(UiEvent::CompletionNote(note.to_string()));
+        installer_log::write_line("info:", note);
     }
 
     fn progress(&self, msg: &str, pct: Option<f32>) {

@@ -151,6 +151,8 @@ pub struct State {
     /// Most recent warn/error to show inline under the active prompt.
     feedback: Option<Feedback>,
     finished: bool,
+    /// Mode-specific "next steps" note shown on the completion screen.
+    complete_note: Option<String>,
     /// True once the worker is running a real install (not interview-only).
     dry_run: bool,
     /// Set once exec begins (first `install_phase`); drives the Install screen.
@@ -193,6 +195,7 @@ impl State {
             summary_data: None,
             feedback: None,
             finished: false,
+            complete_note: None,
             dry_run,
             install: None,
             failure: None,
@@ -579,6 +582,10 @@ impl State {
                 // Mark the phase that was running as not-done; it failed.
                 self.failure = Some(Failure { summary, detail });
                 self.active = Active::None;
+                Task::none()
+            }
+            UiEvent::CompletionNote(note) => {
+                self.complete_note = Some(note);
                 Task::none()
             }
             UiEvent::Finished => {
@@ -1101,14 +1108,18 @@ impl State {
             .size(13)
             .color(styles::MUTED);
 
-        let card = container(
-            column![icon, Space::new().height(12), header, body, hint]
-                .spacing(10)
-                .align_x(Alignment::Center),
-        )
-        .padding(40)
-        .max_width(480)
-        .style(styles::card);
+        let mut card_col = column![icon, Space::new().height(12), header, body, hint]
+            .spacing(10)
+            .align_x(Alignment::Center);
+
+        if let Some(note) = &self.complete_note {
+            card_col = card_col.push(text(note.clone()).size(13).color(styles::TEXT));
+        }
+
+        let card = container(card_col)
+            .padding(40)
+            .max_width(480)
+            .style(styles::card);
 
         let reboot_btn = button(text("Reboot now").size(15))
             .padding([10, 24])
