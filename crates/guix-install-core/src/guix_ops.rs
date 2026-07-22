@@ -1,7 +1,8 @@
 //! Drives the guix-heavy phases (`pull`, `system init`) through `libguix`,
 //! folding its `ProgressEvent` stream into a [`libguix::progress::Summary`] and
-//! reporting both flat (`progress(msg, pct)`) and structured
-//! (`guix_progress(summary)`) updates to the [`UserInterface`].
+//! reporting one unified `progress(status, pct)` update per batch — the same
+//! monotonic milestone percentage (via [`ProgressModel`]) and status line the
+//! CLI and GUI both render.
 //!
 //! Non-guix shell-outs stay in `exec.rs`; this is the only `libguix` entry
 //! point. A current-thread tokio runtime is built per call and the async event
@@ -15,7 +16,7 @@ use futures_util::StreamExt;
 use libguix::progress::{BuildStatus, Failure, Summary};
 use libguix::{BuildOptions, Guix, InitOptions, Privilege, SystemPullOptions};
 
-use crate::progress::{self, Phase};
+use crate::progress::{self, Phase, ProgressModel};
 use crate::ui::UserInterface;
 
 /// Builds a current-thread runtime. One per guix phase keeps the install thread
@@ -48,6 +49,7 @@ pub fn run_pull(
     channels: &Path,
     substitute_urls: Vec<String>,
     ui: &dyn UserInterface,
+    model: &ProgressModel,
 ) -> Result<()> {
     let rt = runtime()?;
     rt.block_on(async move {
@@ -70,7 +72,7 @@ pub fn run_pull(
             .as_root(opts)
             .map_err(|e| anyhow!("failed to start guix pull: {e}"))?;
 
-        drive(op, Phase::Pull, "guix pull", ui).await
+        drive(op, Phase::Pull, "guix pull", ui, model).await
     })
 }
 
@@ -83,6 +85,7 @@ pub fn run_system_init(
     target: &Path,
     substitute_urls: Vec<String>,
     ui: &dyn UserInterface,
+    model: &ProgressModel,
 ) -> Result<()> {
     let rt = runtime()?;
     rt.block_on(async move {
@@ -105,8 +108,16 @@ pub fn run_system_init(
             .init(config_scm, target, opts)
             .map_err(|e| anyhow!("failed to start guix system init: {e}"))?;
 
-        drive(op, Phase::Install, "guix system init", ui).await
+        drive(op, Phase::Install, "guix system init", ui, model).await
     })
+}
+
+/// Emits one unified progress update: the monotonic milestone percentage and
+/// the compact status line, rendered identically by the CLI and GUI.
+fn emit_progress(model: &ProgressModel, phase: Phase, summary: &Summary, ui: &dyn UserInterface) {
+    let overall = model.guix_update(phase, summary);
+    let status = progress::summarize(summary);
+    ui.progress(&status, Some(overall));
 }
 
 /// Consumes the op's event stream, folding batches into a `Summary` and
@@ -116,27 +127,55 @@ async fn drive(
     phase: Phase,
     op_name: &str,
     ui: &dyn UserInterface,
+    model: &ProgressModel,
 ) -> Result<()> {
     let mut summary = Summary::new();
     let mut exit_code: Option<i32> = None;
+    // Ring buffer of the last complete guix lines, so a failure screen can show
+    // the real error context (e.g. a git/SSL fetch failure) even when there's no
+    // specific build log to fall back on.
+    let mut recent: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    const RECENT_CAP: usize = 25;
 
-    while let Some(batch) = op.events_mut().next().await {
-        for evt in &batch {
-            if let libguix::ProgressEvent::ExitSummary { code, .. } = evt {
-                exit_code = Some(*code);
+    // Wake on guix output *or* a ~1s keep-alive tick. The tick keeps the bar
+    // creeping and the elapsed clock ticking even while guix is silent (e.g. a
+    // long channel git-fetch that emits nothing for minutes), so the display
+    // never looks frozen.
+    let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(1));
+    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            maybe_batch = op.events_mut().next() => {
+                let Some(batch) = maybe_batch else { break };
+                for evt in &batch {
+                    if let libguix::ProgressEvent::ExitSummary { code, .. } = evt {
+                        exit_code = Some(*code);
+                    }
+                    // Surface guix's native output for context: redraw (`\r`)
+                    // lines render in place, complete lines scroll. Only the
+                    // complete lines go to the log file (redraws are transient).
+                    if let libguix::ProgressEvent::Line { text, redraw, .. } = evt {
+                        let trimmed = text.trim_end_matches(['\r', '\n']);
+                        if !trimmed.is_empty() {
+                            ui.guix_output(trimmed, *redraw);
+                            if !redraw {
+                                crate::installer_log::write_line("guix:", trimmed);
+                                recent.push_back(trimmed.to_string());
+                                if recent.len() > RECENT_CAP {
+                                    recent.pop_front();
+                                }
+                            }
+                        }
+                    }
+                    summary.ingest(evt);
+                }
+                emit_progress(model, phase, &summary, ui);
             }
-            summary.ingest(evt);
+            _ = keepalive.tick() => {
+                emit_progress(model, phase, &summary, ui);
+            }
         }
-
-        let intra = summary.percent_complete().unwrap_or(0.0);
-        let overall = progress::overall_pct(phase, intra);
-        let msg = summary
-            .last_status_line
-            .as_deref()
-            .unwrap_or(op_name)
-            .to_string();
-        ui.progress(&msg, Some(overall));
-        ui.guix_progress(&summary);
     }
 
     if exit_code == Some(0) {
@@ -166,17 +205,28 @@ async fn drive(
         }
     }
 
+    // Build one detailed message shown identically to the user by both
+    // frontends: the GUI renders it on the failure screen, the CLI prints it at
+    // top level. It leads with the real error, then recent guix output for
+    // context, then a specific build log if one failed, then the log path.
     let mut screen = msg.clone();
     if let Some(line) = &summary.last_status_line {
         screen.push_str(&format!("\n{line}"));
     }
+    if !recent.is_empty() {
+        screen.push_str("\n\n--- recent guix output ---\n");
+        screen.push_str(&recent.iter().cloned().collect::<Vec<_>>().join("\n"));
+    }
     if !tail.is_empty() {
         let lines: Vec<&str> = tail.lines().collect();
         let start = lines.len().saturating_sub(30);
-        screen.push_str("\n--- build log (tail) ---\n");
+        screen.push_str("\n\n--- build log (tail) ---\n");
         screen.push_str(&lines[start..].join("\n"));
     }
-    ui.error(&screen);
+    screen.push_str(&format!(
+        "\n\nFull log: {}",
+        crate::installer_log::LIVE_LOG_PATH
+    ));
 
-    bail!("{}", msg)
+    bail!("{}", screen)
 }

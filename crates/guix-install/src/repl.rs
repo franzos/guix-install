@@ -1,3 +1,7 @@
+use std::cell::{Cell, RefCell};
+use std::fmt::Display;
+use std::io::Write;
+
 use anyhow::Result;
 use console::Style;
 use dialoguer::theme::ColorfulTheme;
@@ -12,11 +16,41 @@ const FUZZY_THRESHOLD: usize = 12;
 #[derive(Default)]
 pub struct Repl {
     theme: ColorfulTheme,
+    /// True when a sticky footer line is currently drawn at the bottom.
+    live_line: Cell<bool>,
+    /// Current footer text (guix status + elapsed clock). Redrawn in place on
+    /// each update and re-pinned under every scrolling line so it stays at the
+    /// bottom instead of being committed into the scrollback.
+    footer: RefCell<String>,
 }
 
 impl Repl {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Print `line` into the scroll region above the sticky footer: erase the
+    /// footer, emit the line, then redraw the footer beneath it. Used for every
+    /// scrolling output (info/warn/error and guix's complete lines).
+    fn scroll_line(&self, line: impl Display) {
+        if self.live_line.get() {
+            print!("\r\x1b[K");
+        }
+        println!("{line}");
+        self.redraw_footer();
+    }
+
+    /// (Re)draw the footer in place on the current line, or clear the live flag
+    /// when there's nothing to show.
+    fn redraw_footer(&self) {
+        let footer = self.footer.borrow();
+        if footer.is_empty() {
+            self.live_line.set(false);
+            return;
+        }
+        print!("\r\x1b[K{}", Style::new().dim().apply_to(&*footer));
+        let _ = std::io::stdout().flush();
+        self.live_line.set(true);
     }
 }
 
@@ -78,27 +112,36 @@ impl UserInterface for Repl {
     }
 
     fn info(&self, msg: &str) {
-        println!("{msg}");
+        self.scroll_line(msg);
         installer_log::write_line("info:", msg);
     }
 
     fn warn(&self, msg: &str) {
-        let style = Style::new().yellow();
-        eprintln!("{}", style.apply_to(format!("warning: {msg}")));
+        self.scroll_line(Style::new().yellow().apply_to(format!("warning: {msg}")));
         installer_log::write_line("warn:", msg);
     }
 
     fn error(&self, msg: &str) {
-        let style = Style::new().red().bold();
-        eprintln!("{}", style.apply_to(format!("error: {msg}")));
+        self.scroll_line(Style::new().red().bold().apply_to(format!("error: {msg}")));
         installer_log::write_line("error:", msg);
     }
 
-    fn progress(&self, msg: &str, pct: Option<f32>) {
-        let style = Style::new().dim();
-        match pct {
-            Some(p) => println!("{}", style.apply_to(format!("[{:.0}%] {msg}", p * 100.0))),
-            None => println!("{}", style.apply_to(format!("... {msg}"))),
+    fn guix_output(&self, line: &str, redraw: bool) {
+        // Complete guix lines scroll above the footer (real context on failure).
+        // Guix's own `\r` redraw lines are its in-place progress bars; the sticky
+        // footer already is our progress line (with elapsed + byte counts), so we
+        // drop them rather than fight over the bottom line.
+        if redraw {
+            return;
         }
+        self.scroll_line(Style::new().dim().apply_to(line));
+    }
+
+    fn progress(&self, msg: &str, _pct: Option<f32>) {
+        // The bar/percentage are GUI-only chrome. On the CLI the status line is a
+        // footer pinned to the bottom: we cache it and redraw in place, so the
+        // elapsed clock ticks and scrolling guix output re-pins it beneath.
+        *self.footer.borrow_mut() = msg.to_string();
+        self.redraw_footer();
     }
 }

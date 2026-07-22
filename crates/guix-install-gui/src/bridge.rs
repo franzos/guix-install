@@ -81,8 +81,12 @@ pub enum UiEvent {
         num: u8,
         label: String,
     },
-    /// Compact live detail line from an in-flight guix op (pull / system init).
-    GuixDetail(String),
+    /// One line of guix's raw output for the GUI log panel. `redraw` (guix's
+    /// `\r`) means it replaces the previous redraw line rather than stacking.
+    GuixLine {
+        text: String,
+        redraw: bool,
+    },
     /// A phase failed: the run loop returned `Err`. Carries a one-line summary
     /// plus the full error chain for the failure screen.
     Failed {
@@ -120,74 +124,6 @@ impl IcedUi {
 
 fn cancelled() -> anyhow::Error {
     anyhow::Error::new(UserCancelled)
-}
-
-/// Folds a guix [`Summary`] into a single compact detail line for the Install
-/// screen: the active stage plus the most relevant in-flight item (a download
-/// with byte counts, or the current build), and running tallies.
-fn summarize(s: &libguix::progress::Summary) -> String {
-    use libguix::progress::{BuildStatus, Stage};
-
-    let stage = match s.stage {
-        Stage::Starting => "starting",
-        Stage::ChannelUpdate => "updating channels",
-        Stage::ComputingDeriv => "computing derivation",
-        Stage::Downloading => "downloading",
-        Stage::Building => "building",
-        Stage::Profile => "finalizing profile",
-        Stage::Done => "done",
-        Stage::Failed => "failed",
-    };
-
-    // Prefer an in-flight download (with bytes), else the current running build.
-    let active = s
-        .downloads
-        .values()
-        .rev()
-        .find(|d| !d.done)
-        .map(|d| match d.bytes_total {
-            Some(total) if total > 0 => format!(
-                "{} ({}/{})",
-                d.pretty_name,
-                human_bytes(d.bytes_done),
-                human_bytes(total)
-            ),
-            _ => format!("{} ({})", d.pretty_name, human_bytes(d.bytes_done)),
-        })
-        .or_else(|| {
-            s.builds
-                .values()
-                .rev()
-                .find(|b| b.status == BuildStatus::Running)
-                .map(|b| format!("building {}", b.pretty_name))
-        });
-
-    let tally = format!(
-        "{} built · {} downloaded · {} total",
-        s.build_count_done,
-        s.download_count_done,
-        human_bytes(s.bytes_downloaded)
-    );
-
-    match active {
-        Some(item) => format!("{stage}: {item} - {tally}"),
-        None => format!("{stage} - {tally}"),
-    }
-}
-
-fn human_bytes(n: u64) -> String {
-    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
-    let mut v = n as f64;
-    let mut u = 0;
-    while v >= 1024.0 && u < UNITS.len() - 1 {
-        v /= 1024.0;
-        u += 1;
-    }
-    if u == 0 {
-        format!("{n} B")
-    } else {
-        format!("{v:.1} {}", UNITS[u])
-    }
 }
 
 impl UserInterface for IcedUi {
@@ -284,8 +220,11 @@ impl UserInterface for IcedUi {
         });
     }
 
-    fn guix_progress(&self, summary: &libguix::progress::Summary) {
-        self.send(UiEvent::GuixDetail(summarize(summary)));
+    fn guix_output(&self, line: &str, redraw: bool) {
+        self.send(UiEvent::GuixLine {
+            text: line.to_string(),
+            redraw,
+        });
     }
 
     fn apply_keyboard_layout(

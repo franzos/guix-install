@@ -7,7 +7,7 @@ use crate::enterprise;
 use crate::installer_log;
 use crate::mode::InstallMode;
 use crate::passwd;
-use crate::progress::{self, Phase};
+use crate::progress::ProgressModel;
 use crate::resume::InstallState;
 use crate::ui::UserInterface;
 use crate::{disk, exec, scheme};
@@ -261,8 +261,10 @@ pub fn execute_installation(config: &SystemConfig, ui: &dyn UserInterface) -> Re
     validate_resume_state(&mut state, config, ui);
 
     let mut session = InstallSession::new(config);
+    let model = ProgressModel::new();
 
-    type PhaseFn = fn(&SystemConfig, &dyn UserInterface, &mut InstallSession) -> Result<()>;
+    type PhaseFn =
+        fn(&SystemConfig, &dyn UserInterface, &mut InstallSession, &ProgressModel) -> Result<()>;
     let phases: &[(u8, PhaseFn)] = &[
         (1, phase_partition),
         (2, phase_format),
@@ -275,33 +277,51 @@ pub fn execute_installation(config: &SystemConfig, ui: &dyn UserInterface) -> Re
     ];
 
     for (num, func) in phases {
+        let n = *num;
         if state.completed_phases.contains(num) {
-            ui.install_phase(*num, 8, phase_label(*num));
-            ui.info(&format!("Phase {num}/8: Already completed, skipping."));
-            ui.progress(
-                &format!("Phase {num}/8 already complete"),
-                Some(progress::overall_pct(phase_for(*num), 1.0)),
-            );
+            ui.install_phase(n, 8, phase_label(n));
+            ui.info(&format!("Phase {n}/8: Already completed, skipping."));
+            // Cheap phases nudge the prefix; a skipped init jumps to the ceiling.
+            // A skipped pull (7) is left alone — it is usually a no-op, so its
+            // band must not be credited (that was the old "stuck at 46%" bug).
+            if n <= 6 {
+                ui.progress(
+                    &format!("Phase {n}/8 already complete"),
+                    Some(model.cheap_phase(n, true)),
+                );
+            } else if n == 8 {
+                ui.progress("Phase 8/8 already complete", Some(model.skip_install()));
+            }
             continue;
         }
 
-        ui.install_phase(*num, 8, phase_label(*num));
-        installer_log::write_line("phase:", &format!("starting {num}/8"));
-        // Cheap phases report start here; the guix phases (7/8) report their
-        // own intra-phase fraction via guix_ops.
-        ui.progress(
-            &format!("Phase {num}/8 starting"),
-            Some(progress::overall_pct(phase_for(*num), 0.0)),
-        );
-        func(config, ui, &mut session).map_err(|e| e.context(format!("Phase {num}/8 failed")))?;
-        installer_log::write_line("phase:", &format!("completed {num}/8"));
-        ui.progress(
-            &format!("Phase {num}/8 complete"),
-            Some(progress::overall_pct(phase_for(*num), 1.0)),
-        );
-        state.mark_complete(*num);
+        ui.install_phase(n, 8, phase_label(n));
+        installer_log::write_line("phase:", &format!("starting {n}/8"));
+        // Cheap phases report coarse start/complete here; the guix phases (7/8)
+        // report their own fine-grained milestone progress from inside guix_ops.
+        if n <= 6 {
+            ui.progress(
+                &format!("Phase {n}/8 starting"),
+                Some(model.cheap_phase(n, false)),
+            );
+        }
+        func(config, ui, &mut session, &model)
+            .map_err(|e| e.context(format!("Phase {n}/8 failed")))?;
+        installer_log::write_line("phase:", &format!("completed {n}/8"));
+        if n <= 6 {
+            ui.progress(
+                &format!("Phase {n}/8 complete"),
+                Some(model.cheap_phase(n, true)),
+            );
+        }
+        state.mark_complete(n);
         state.save()?;
     }
+
+    // The model caps intermediate progress at CEIL; the literal 100% is emitted
+    // here, once, on success. The GUI also gets it via `Finished`, but the CLI
+    // has no other signal, so without this its bar would freeze at 99%.
+    ui.progress("Installation complete", Some(1.0));
 
     InstallState::cleanup()?;
     session.mark_complete();
@@ -322,24 +342,11 @@ fn phase_label(num: u8) -> &'static str {
     }
 }
 
-/// Maps the 1..=8 phase number to its weighted [`Phase`].
-fn phase_for(num: u8) -> Phase {
-    match num {
-        1 => Phase::Partition,
-        2 => Phase::Format,
-        3 => Phase::Mount,
-        4 => Phase::Swap,
-        5 => Phase::Config,
-        6 => Phase::Authorize,
-        7 => Phase::Pull,
-        _ => Phase::Install,
-    }
-}
-
 fn phase_partition(
     config: &SystemConfig,
     ui: &dyn UserInterface,
     _session: &mut InstallSession,
+    _model: &ProgressModel,
 ) -> Result<()> {
     ui.info("Phase 1/8: Partitioning disk...");
     let cmds = disk::partition::partition_commands(&config.disk.dev_path, &config.firmware);
@@ -358,6 +365,7 @@ fn phase_format(
     config: &SystemConfig,
     ui: &dyn UserInterface,
     _session: &mut InstallSession,
+    _model: &ProgressModel,
 ) -> Result<()> {
     ui.info("Phase 2/8: Formatting partitions...");
     let cmds = disk::format::format_commands(config);
@@ -388,6 +396,7 @@ fn phase_mount(
     config: &SystemConfig,
     ui: &dyn UserInterface,
     session: &mut InstallSession,
+    _model: &ProgressModel,
 ) -> Result<()> {
     ui.info("Phase 3/8: Mounting filesystems...");
     for action in disk::mount::mount_actions(config) {
@@ -415,6 +424,7 @@ fn phase_swap(
     config: &SystemConfig,
     ui: &dyn UserInterface,
     _session: &mut InstallSession,
+    _model: &ProgressModel,
 ) -> Result<()> {
     ui.info("Phase 4/8: Creating swap...");
     for action in disk::mount::swap_actions(config) {
@@ -427,6 +437,7 @@ fn phase_config(
     config: &SystemConfig,
     ui: &dyn UserInterface,
     _session: &mut InstallSession,
+    _model: &ProgressModel,
 ) -> Result<()> {
     ui.info("Phase 5/8: Writing system configuration...");
     std::fs::create_dir_all("/mnt/etc/guix")?;
@@ -483,6 +494,7 @@ fn phase_authorize(
     config: &SystemConfig,
     ui: &dyn UserInterface,
     _session: &mut InstallSession,
+    _model: &ProgressModel,
 ) -> Result<()> {
     ui.info("Phase 6/8: Authorizing substitute servers...");
 
@@ -515,6 +527,7 @@ fn phase_pull(
     config: &SystemConfig,
     ui: &dyn UserInterface,
     _session: &mut InstallSession,
+    model: &ProgressModel,
 ) -> Result<()> {
     ui.info("Phase 7/8: Checking channel availability...");
 
@@ -532,10 +545,14 @@ fn phase_pull(
     }
 
     ui.info("  Running guix pull (this may take a while)...");
+    // Pull is doing real work, so `guix system init` should start from the
+    // pull/install band boundary rather than the cheap-phase prefix.
+    model.mark_pull_ran();
     crate::guix_ops::run_pull(
         Path::new("/mnt/etc/guix/channels.scm"),
         config.mode.substitute_urls(),
         ui,
+        model,
     )?;
 
     Ok(())
@@ -564,6 +581,7 @@ fn phase_install(
     config: &SystemConfig,
     ui: &dyn UserInterface,
     session: &mut InstallSession,
+    model: &ProgressModel,
 ) -> Result<()> {
     ui.info("Phase 8/8: Installing system (this will take a while)...");
 
@@ -575,6 +593,7 @@ fn phase_install(
         Path::new(TARGET_DIR),
         config.mode.substitute_urls(),
         ui,
+        model,
     )?;
 
     ui.info("Installation complete! You can now reboot.");

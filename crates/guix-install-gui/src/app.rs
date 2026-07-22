@@ -122,12 +122,10 @@ struct Install {
     current: u8,
     /// Highest 1-based phase reported done.
     done_through: u8,
-    /// Overall weighted percent (0.0..=1.0) from the core's `progress` calls.
+    /// Monotonic milestone percent (0.0..=1.0) from the core's `progress` calls.
     pct: f32,
-    /// Last `progress` message line.
+    /// Last `progress` status line (the unified guix summary shown on the CLI too).
     status: String,
-    /// Compact live detail from the in-flight guix op.
-    detail: String,
 }
 
 /// Failure-screen payload.
@@ -169,6 +167,9 @@ pub struct State {
     kbd_test: String,
     /// When true, the content area shows the About panel instead of the step.
     about: bool,
+    /// True when the last `log` entry was a guix redraw (`\r`) line, so the next
+    /// redraw line replaces it rather than stacking near-duplicates.
+    log_live: bool,
 }
 
 #[derive(Clone)]
@@ -204,6 +205,7 @@ impl State {
             spinner_frame: 0,
             kbd_test: String::new(),
             about: false,
+            log_live: false,
         };
         (state, focus_input())
     }
@@ -477,6 +479,17 @@ impl State {
         Task::none()
     }
 
+    /// Append a line to the scrolling log, bounding its growth over a long
+    /// install (guix can emit thousands of lines).
+    fn push_log(&mut self, line: String) {
+        const LOG_CAP: usize = 1000;
+        self.log.push(line);
+        if self.log.len() > LOG_CAP {
+            let excess = self.log.len() - LOG_CAP;
+            self.log.drain(0..excess);
+        }
+    }
+
     fn handle_event(&mut self, event: UiEvent) -> Task<Message> {
         match event {
             UiEvent::Prompt(req) => {
@@ -525,7 +538,8 @@ impl State {
                 Task::none()
             }
             UiEvent::Info(m) => {
-                self.log.push(m);
+                self.push_log(m);
+                self.log_live = false;
                 Task::none()
             }
             UiEvent::Warn(m) => {
@@ -533,7 +547,8 @@ impl State {
                     text: m.clone(),
                     danger: false,
                 });
-                self.log.push(format!("warning: {m}"));
+                self.push_log(format!("warning: {m}"));
+                self.log_live = false;
                 Task::none()
             }
             UiEvent::Summary(data) => {
@@ -545,19 +560,19 @@ impl State {
                     text: m.clone(),
                     danger: true,
                 });
-                self.log.push(format!("error: {m}"));
+                self.push_log(format!("error: {m}"));
+                self.log_live = false;
                 Task::none()
             }
             UiEvent::Progress { msg, pct } => {
-                if let (Some(inst), Some(p)) = (self.install.as_mut(), pct) {
-                    inst.pct = p;
-                    inst.status = msg.clone();
+                // Update the in-place bar + status only; unlike info/warn/error
+                // these don't scroll into the log (they'd flood it per batch).
+                if let Some(inst) = self.install.as_mut() {
+                    if let Some(p) = pct {
+                        inst.pct = p;
+                    }
+                    inst.status = msg;
                 }
-                let line = match pct {
-                    Some(p) => format!("[{:.0}%] {msg}", p * 100.0),
-                    None => format!("... {msg}"),
-                };
-                self.log.push(line);
                 Task::none()
             }
             UiEvent::Phase { num, label } => {
@@ -568,14 +583,19 @@ impl State {
                 }
                 inst.current = num;
                 inst.status = label.clone();
-                inst.detail.clear();
                 self.active = Active::None;
                 Task::none()
             }
-            UiEvent::GuixDetail(detail) => {
-                if let Some(inst) = self.install.as_mut() {
-                    inst.detail = detail;
+            UiEvent::GuixLine { text, redraw } => {
+                // Redraw lines (guix's `\r` progress) replace the previous one;
+                // complete lines append. Keeps the log panel from filling with
+                // near-duplicate progress frames.
+                if redraw && self.log_live && !self.log.is_empty() {
+                    *self.log.last_mut().unwrap() = text;
+                } else {
+                    self.push_log(text);
                 }
+                self.log_live = redraw;
                 Task::none()
             }
             UiEvent::Failed { summary, detail } => {
@@ -1032,8 +1052,8 @@ impl State {
         .into()
     }
 
-    /// The Install screen: phase checklist + weighted progress bar + the live
-    /// detail line for the current guix op.
+    /// The Install screen: phase checklist + milestone progress bar + the live
+    /// status line for the current guix op.
     fn view_install(&self, inst: &Install) -> Element<'_, Message> {
         let header = text("Installing").size(24).font(styles::BOLD);
 
@@ -1072,9 +1092,6 @@ impl State {
         if !inst.status.trim().is_empty() {
             detail_col = detail_col.push(Space::new().height(6));
             detail_col = detail_col.push(text(inst.status.clone()).size(13).color(styles::TEXT));
-        }
-        if !inst.detail.trim().is_empty() {
-            detail_col = detail_col.push(text(inst.detail.clone()).size(12).color(styles::MUTED));
         }
 
         let card = container(detail_col)
@@ -1154,6 +1171,15 @@ impl State {
 
         let summary = text(failure.summary.clone()).size(15).color(styles::TEXT);
 
+        // Always-visible pointer to the full log, which survives on the live
+        // system even after a failed install unmounts the target.
+        let log_hint = text(format!(
+            "Full log: {}",
+            guix_install_core::installer_log::LIVE_LOG_PATH
+        ))
+        .size(12)
+        .color(styles::MUTED);
+
         let detail = scrollable(
             text(failure.detail.clone())
                 .size(12)
@@ -1163,7 +1189,7 @@ impl State {
         .height(Fill);
 
         let card = container(
-            column![summary, Space::new().height(12), detail]
+            column![summary, log_hint, Space::new().height(12), detail]
                 .spacing(4)
                 .height(Fill),
         )

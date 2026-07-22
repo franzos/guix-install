@@ -3,7 +3,6 @@ use anyhow::Result;
 use crate::config::SystemConfig;
 use crate::install;
 use crate::installer_log;
-use crate::mode::InstallMode;
 use crate::resume::InstallState;
 use crate::scheme::operating_system::render_operating_system;
 use crate::steps::desktop::step_desktop;
@@ -82,7 +81,6 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
         && let Some(config) = handle_resume(ui, state)?
     {
         install::execute_installation(&config, ui)?;
-        ui.completion_note(&post_install_note(&config.mode));
         return Ok(());
     }
 
@@ -146,16 +144,5 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
     }
 
     install::execute_installation(&config, ui)?;
-    ui.completion_note(&post_install_note(&config.mode));
     Ok(())
-}
-
-/// "Next steps" note shown after a successful install.
-///
-/// Nonguix and Panther bake their channels into the system guix, so `guix
-/// describe` is already correct at first boot; plain Guix carries only the
-/// default channel. So the note is just the standard update reminder for all
-/// modes.
-pub fn post_install_note(_mode: &InstallMode) -> String {
-    "Run `guix pull`, then `sudo guix system reconfigure /etc/system.scm`, to update.".into()
 }

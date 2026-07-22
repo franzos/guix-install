@@ -87,11 +87,13 @@ pub trait UserInterface {
     /// `info`/`progress` lines instead.
     fn install_phase(&self, _num: u8, _total: u8, _label: &str) {}
 
-    /// Structured snapshot of an in-flight guix op (pull / system init) for
-    /// frontends that want per-download/per-build detail. No-op by default —
-    /// the CLI relies on the flat `progress(msg, pct)` path; the GUI wires
-    /// this up to its Install screen.
-    fn guix_progress(&self, _summary: &libguix::progress::Summary) {}
+    /// Streams one line of guix's raw output (already trimmed), so there's real
+    /// context when something goes wrong. `redraw` mirrors guix's `\r` semantics:
+    /// `true` replaces the current line in place (a live progress line), `false`
+    /// is a complete line. The CLI renders redraw lines in place and scrolls the
+    /// rest; the GUI appends them to its log panel. Recognised download/build
+    /// progress arrives structured via `progress`, not here. No-op by default.
+    fn guix_output(&self, _line: &str, _redraw: bool) {}
 
     /// Apply the chosen keyboard layout to the live session.
     ///

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.13] - 2026-07-22
+
+### Added
+- Nonguix installs bake the nonguix channel into the system, shown by `guix describe`.
+
+### Changed
+- CLI shows guix's live build output under a pinned status line with an elapsed clock.
+
+### Fixed
+- Install progress bar no longer freezes partway through the guix build.
+- Failed installs show guix's real error and the log path, not just the exit code.
+
 ## [0.1.12] - 2026-07-01
 
 ### Added
