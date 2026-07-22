@@ -110,8 +110,10 @@ mod tests {
 
     #[test]
     fn interview_config_roundtrips_through_serde() {
-        let mut config = SystemConfig::default();
-        config.keyboard_layout = Some("de".into());
+        let config = SystemConfig {
+            keyboard_layout: Some("de".into()),
+            ..SystemConfig::default()
+        };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: SystemConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded.keyboard_layout.as_deref(), Some("de"));

@@ -237,6 +237,24 @@ pub fn validate_config_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn generate_hostname(mode: &InstallMode) -> String {
+    use rand::Rng;
+
+    let prefix = mode.label();
+    let mut rng = rand::thread_rng();
+    let suffix: String = (0..6)
+        .map(|_| {
+            let idx = rng.gen_range(0..36);
+            if idx < 10 {
+                (b'0' + idx) as char
+            } else {
+                (b'a' + idx - 10) as char
+            }
+        })
+        .collect();
+    format!("{prefix}-{suffix}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,22 +313,4 @@ mod tests {
         let key = format!("ssh-ed25519 {b64}");
         assert!(validate_ssh_public_key(&key).is_err());
     }
-}
-
-pub fn generate_hostname(mode: &InstallMode) -> String {
-    use rand::Rng;
-
-    let prefix = mode.label();
-    let mut rng = rand::thread_rng();
-    let suffix: String = (0..6)
-        .map(|_| {
-            let idx = rng.gen_range(0..36);
-            if idx < 10 {
-                (b'0' + idx) as char
-            } else {
-                (b'a' + idx - 10) as char
-            }
-        })
-        .collect();
-    format!("{prefix}-{suffix}")
 }
