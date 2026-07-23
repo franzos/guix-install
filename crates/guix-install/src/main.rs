@@ -1,6 +1,7 @@
+mod headless;
 mod repl;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 use guix_install_core::config::{
@@ -9,13 +10,20 @@ use guix_install_core::config::{
     validate_username,
 };
 use guix_install_core::disk::detect::{detect_block_devices, format_device};
+use guix_install_core::install;
 use guix_install_core::mode::InstallMode;
 use guix_install_core::network;
 use guix_install_core::run;
 use guix_install_core::scheme::channels::render_channels;
 use guix_install_core::scheme::operating_system::render_operating_system;
 
+use headless::Headless;
 use repl::Repl;
+
+/// Env var supplying the user account password in unattended mode.
+const ENV_PASSWORD: &str = "GUIX_INSTALL_PASSWORD";
+/// Env var supplying the LUKS passphrase in unattended mode (when `--encrypt`).
+const ENV_LUKS_PASSPHRASE: &str = "GUIX_INSTALL_LUKS_PASSPHRASE";
 
 #[derive(Parser)]
 #[command(
@@ -86,6 +94,13 @@ struct Cli {
     /// Print generated config without executing
     #[arg(long)]
     dry_run: bool,
+
+    /// Run the install non-interactively from flags. Requires --disk and the
+    /// GUIX_INSTALL_PASSWORD env var (plus GUIX_INSTALL_LUKS_PASSPHRASE when
+    /// --encrypt is set). No prompts, no confirmation — proceeds straight to
+    /// formatting the disk.
+    #[arg(long)]
+    unattended: bool,
 
     /// Skip confirmation prompts
     #[arg(long)]
@@ -223,6 +238,76 @@ fn run_interactive(dry_run: bool) -> Result<()> {
     run::run_interactive(&mut ui, dry_run)
 }
 
+/// Reads a required secret from `var`, erroring if it is unset or empty.
+fn read_secret_env(var: &str) -> Result<zeroize::Zeroizing<String>> {
+    let value = std::env::var(var)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .context(format!(
+            "{var} is not set; unattended install needs it to set the password/passphrase"
+        ))?;
+    Ok(zeroize::Zeroizing::new(value))
+}
+
+/// Non-interactive install driven entirely by flags + secret env vars.
+///
+/// Bypasses the step navigator: builds the config from CLI flags, injects the
+/// password (and LUKS passphrase, if encrypting) from the environment, resolves
+/// the real target device, then runs the 8-phase pipeline with a non-prompting
+/// UI. Intended for automated VM testing and scripted deployments.
+fn run_unattended(cli: &Cli) -> Result<()> {
+    if cli.disk.is_none() {
+        anyhow::bail!("--unattended requires --disk <device> (refusing to guess a target disk)");
+    }
+
+    let mut config = build_config(cli)?;
+
+    // Fill in the real device details so the summary/layout match what interactive
+    // installs see. Not strictly needed for partition/format (they only use the
+    // path + firmware), but keeps size/model accurate and fails loudly if the disk
+    // is absent.
+    match detect_block_devices() {
+        Ok(devices) => {
+            match devices
+                .into_iter()
+                .find(|d| d.dev_path == config.disk.dev_path)
+            {
+                Some(dev) => config.disk = dev,
+                None => anyhow::bail!(
+                    "target disk {} not found among detected devices",
+                    config.disk.dev_path
+                ),
+            }
+        }
+        Err(e) => eprintln!("warning: disk detection failed ({e}); using --disk path as given"),
+    }
+
+    config.password = Some(read_secret_env(ENV_PASSWORD)?);
+
+    if let Some(enc) = config.encryption.as_mut() {
+        enc.passphrase = Some(read_secret_env(ENV_LUKS_PASSPHRASE)?);
+    }
+
+    let encrypt = if config.encryption.is_some() {
+        "yes"
+    } else {
+        "no"
+    };
+    println!(
+        "Unattended install: mode={} disk={} filesystem={} encrypt={}",
+        config.mode.label(),
+        config.disk.dev_path,
+        config.filesystem,
+        encrypt
+    );
+    println!(
+        "{} will be formatted. ALL DATA WILL BE LOST.",
+        config.disk.dev_path
+    );
+
+    install::execute_installation(&config, &Headless)
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -264,6 +349,8 @@ fn main() -> Result<()> {
                     println!(";;; channels.scm");
                     println!("{ch}");
                 }
+            } else if cli.unattended {
+                run_unattended(&cli)?;
             } else {
                 run_interactive(cli.dry_run)?;
             }
