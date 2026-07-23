@@ -151,6 +151,10 @@ pub struct State {
     finished: bool,
     /// Mode-specific "next steps" note shown on the completion screen.
     complete_note: Option<String>,
+    /// Set once Reboot/Shutdown is pressed on the completion screen: the status
+    /// label to show while the machine goes down. Disables the action buttons so
+    /// the click is acknowledged even if the power-off takes a moment.
+    finishing: Option<&'static str>,
     /// True once the worker is running a real install (not interview-only).
     dry_run: bool,
     /// Set once exec begins (first `install_phase`); drives the Install screen.
@@ -197,6 +201,7 @@ impl State {
             feedback: None,
             finished: false,
             complete_note: None,
+            finishing: None,
             dry_run,
             install: None,
             failure: None,
@@ -400,11 +405,16 @@ impl State {
                 Task::none()
             }
             Message::Reboot => {
-                reboot();
+                self.finishing = Some("Rebooting…");
+                // Return immediately so the view repaints the status/disabled
+                // state; the detached thread powers down a beat later, so the
+                // click never looks ignored.
+                finish_after_repaint(reboot);
                 Task::none()
             }
             Message::Shutdown => {
-                shutdown();
+                self.finishing = Some("Shutting down…");
+                finish_after_repaint(shutdown);
                 Task::none()
             }
             Message::SpinnerTick => {
@@ -1138,15 +1148,20 @@ impl State {
             .max_width(480)
             .style(styles::card);
 
-        let reboot_btn = button(text("Reboot now").size(15))
-            .padding([10, 24])
-            .style(styles::btn_primary)
-            .on_press(Message::Reboot);
-        let shutdown_btn = button(text("Shut down").size(15))
-            .padding([10, 24])
-            .style(styles::btn_secondary)
-            .on_press(Message::Shutdown);
-        let actions = row![reboot_btn, shutdown_btn].spacing(12);
+        let actions: Element<'_, Message> = if let Some(status) = self.finishing {
+            // Buttons pressed: acknowledge with a status line, no more actions.
+            text(status).size(15).color(styles::MUTED).into()
+        } else {
+            let reboot_btn = button(text("Reboot now").size(15))
+                .padding([10, 24])
+                .style(styles::btn_primary)
+                .on_press(Message::Reboot);
+            let shutdown_btn = button(text("Shut down").size(15))
+                .padding([10, 24])
+                .style(styles::btn_secondary)
+                .on_press(Message::Shutdown);
+            row![reboot_btn, shutdown_btn].spacing(12).into()
+        };
 
         let inner = column![card, actions]
             .align_x(Alignment::Center)
@@ -1547,34 +1562,51 @@ fn filtered_indices(options: &[String], filter: &str) -> Vec<usize> {
         .collect()
 }
 
-/// Reboot via whichever command the install env actually has on PATH.
-fn reboot() {
-    use std::process::Command;
-    if Command::new("reboot").spawn().is_ok() {
-        return;
-    }
-    if Command::new("/run/current-system/profile/sbin/reboot")
-        .spawn()
-        .is_ok()
-    {
-        return;
-    }
-    let _ = Command::new("shutdown").args(["-r", "now"]).spawn();
+/// Runs `action` on a detached thread after a brief pause, so the completion
+/// screen repaints its in-progress state before the machine goes down.
+fn finish_after_repaint(action: fn()) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        action();
+    });
 }
 
-/// Power off via whichever command the install env actually has on PATH.
-fn shutdown() {
+/// Runs the first candidate that spawns; each is `(program, args)`.
+///
+/// The install ISO's shepherd puts `reboot`/`halt`/`shutdown` in
+/// `/run/current-system/profile/sbin`, which isn't on the GUI process's PATH
+/// under cage — so the absolute path comes first, with the bare name as a
+/// fallback for environments that do have it on PATH.
+fn spawn_first(candidates: &[(&str, &[&str])]) {
     use std::process::Command;
-    if Command::new("poweroff").spawn().is_ok() {
-        return;
+    for (program, args) in candidates {
+        if Command::new(program).args(*args).spawn().is_ok() {
+            return;
+        }
     }
-    if Command::new("/run/current-system/profile/sbin/poweroff")
-        .spawn()
-        .is_ok()
-    {
-        return;
-    }
-    let _ = Command::new("shutdown").args(["-h", "now"]).spawn();
+}
+
+/// Reboot via whichever shepherd command the install env actually provides.
+fn reboot() {
+    spawn_first(&[
+        ("/run/current-system/profile/sbin/reboot", &[]),
+        ("reboot", &[]),
+        ("/run/current-system/profile/sbin/shutdown", &["-r", "now"]),
+        ("shutdown", &["-r", "now"]),
+    ]);
+}
+
+/// Power off via whichever shepherd command the install env actually provides.
+///
+/// Note: the ISO ships `halt` (which powers off), not `poweroff` — the old
+/// `poweroff` lookup is why the Shut down button silently did nothing.
+fn shutdown() {
+    spawn_first(&[
+        ("/run/current-system/profile/sbin/halt", &[]),
+        ("halt", &[]),
+        ("/run/current-system/profile/sbin/shutdown", &["-h", "now"]),
+        ("shutdown", &["-h", "now"]),
+    ]);
 }
 
 /// Stable subscription identity. The slot is excluded from the hash so the
