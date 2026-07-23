@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.14] - 2026-07-23
+
+### Added
+- Unattended install mode driven by flags and environment secrets.
+
+### Fixed
+- GUI Shut down button now powers the machine off.
+- Reboot/Shut down clicks are acknowledged with an in-progress status.
+
 ## [0.1.13] - 2026-07-22
 
 ### Added
