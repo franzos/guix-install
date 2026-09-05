@@ -243,6 +243,31 @@ fn format_btrfs_encrypted() {
 }
 
 #[test]
+fn format_xfs_plain_nvme() {
+    let mut config = test_config("/dev/nvme0n1", "nvme0n1");
+    config.filesystem = Filesystem::Xfs;
+    let cmds = format_root_commands(&config);
+    assert_eq!(cmds.len(), 1);
+    assert_eq!(
+        cmds[0],
+        vec!["mkfs.xfs", "-f", "-L", "my-root", "/dev/nvme0n1p2"]
+    );
+}
+
+#[test]
+fn format_xfs_encrypted() {
+    let mut config = test_config("/dev/sda", "sda");
+    config.filesystem = Filesystem::Xfs;
+    config.encryption = Some(EncryptionConfig {
+        device_target: "cryptroot".into(),
+        passphrase: None,
+    });
+    let cmds = format_root_commands(&config);
+    assert_eq!(cmds.len(), 1);
+    assert_eq!(cmds[0][4], "/dev/mapper/cryptroot");
+}
+
+#[test]
 fn format_efi_partition() {
     let cmds = format_efi_commands("/dev/sda");
     assert_eq!(cmds[0], vec!["mkfs.fat", "-I", "-F32", "/dev/sda1"]);

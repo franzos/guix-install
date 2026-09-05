@@ -193,6 +193,7 @@ fn render_file_systems(config: &SystemConfig) -> String {
     let fs_type = match config.filesystem {
         Filesystem::Ext4 => "ext4",
         Filesystem::Btrfs => "btrfs",
+        Filesystem::Xfs => "xfs",
     };
 
     let encrypted = config.encryption.is_some();

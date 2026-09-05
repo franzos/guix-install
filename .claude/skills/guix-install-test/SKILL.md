@@ -91,7 +91,7 @@ Last line should print the installer's banner — confirms it can dlopen libgcc 
 
 Print a compact table of what to pick at each REPL step. Match the user's chosen scenario. Always include:
 - Mode (Guix / Nonguix / Panther / Enterprise)
-- Filesystem (ext4 / btrfs)
+- Filesystem (ext4 / btrfs / xfs)
 - Encryption (yes/no — the passphrase is entered once and piped to cryptsetup via `--key-file -`; `luksFormat --batch-mode` means no extra confirmation prompt)
 - Disk: `/dev/vda`
 - Username: `panther`, password: `test1234`

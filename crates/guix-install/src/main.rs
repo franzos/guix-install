@@ -126,8 +126,8 @@ fn parse_mode(s: &str) -> Result<String, String> {
 
 fn parse_filesystem(s: &str) -> Result<String, String> {
     match s {
-        "ext4" | "btrfs" => Ok(s.to_string()),
-        _ => Err(format!("invalid filesystem: {s} (expected ext4|btrfs)")),
+        "ext4" | "btrfs" | "xfs" => Ok(s.to_string()),
+        _ => Err(format!("invalid filesystem: {s} (expected ext4|btrfs|xfs)")),
     }
 }
 
@@ -180,6 +180,7 @@ fn build_config(cli: &Cli) -> Result<SystemConfig> {
 
     let filesystem = match cli.filesystem.as_str() {
         "btrfs" => Filesystem::Btrfs,
+        "xfs" => Filesystem::Xfs,
         _ => Filesystem::Ext4,
     };
 

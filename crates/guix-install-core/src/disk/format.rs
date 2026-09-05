@@ -76,6 +76,14 @@ pub fn format_root_commands(config: &SystemConfig) -> Vec<Vec<String>> {
                     .collect(),
             );
         }
+        Filesystem::Xfs => {
+            cmds.push(
+                vec!["mkfs.xfs", "-f", "-L", "my-root", &root_device]
+                    .into_iter()
+                    .map(String::from)
+                    .collect(),
+            );
+        }
     }
 
     cmds
@@ -252,6 +260,37 @@ mod tests {
         assert_eq!(
             cmds[0],
             vec!["mkfs.btrfs", "-f", "-L", "my-root", "/dev/mapper/cryptroot"]
+        );
+    }
+
+    #[test]
+    fn format_root_xfs_plain() {
+        let mut config = test_config();
+        config.filesystem = Filesystem::Xfs;
+        config.encryption = None;
+
+        let cmds = format_root_commands(&config);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(
+            cmds[0],
+            vec!["mkfs.xfs", "-f", "-L", "my-root", "/dev/sda2"]
+        );
+    }
+
+    #[test]
+    fn format_root_xfs_encrypted() {
+        let mut config = test_config();
+        config.filesystem = Filesystem::Xfs;
+        config.encryption = Some(EncryptionConfig {
+            device_target: "cryptroot".into(),
+            passphrase: None,
+        });
+
+        let cmds = format_root_commands(&config);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(
+            cmds[0],
+            vec!["mkfs.xfs", "-f", "-L", "my-root", "/dev/mapper/cryptroot"]
         );
     }
 

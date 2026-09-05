@@ -56,6 +56,7 @@ pub enum Firmware {
 pub enum Filesystem {
     Ext4,
     Btrfs,
+    Xfs,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -93,6 +94,7 @@ impl fmt::Display for Filesystem {
         match self {
             Filesystem::Ext4 => write!(f, "ext4"),
             Filesystem::Btrfs => write!(f, "btrfs"),
+            Filesystem::Xfs => write!(f, "xfs"),
         }
     }
 }

@@ -90,7 +90,7 @@ Common flags:
 | `--timezone` | `Europe/Berlin` | |
 | `--locale` | `en_US.utf8` | |
 | `--disk` | `/dev/sda` | |
-| `--filesystem` | `ext4` | or `btrfs` |
+| `--filesystem` | `ext4` | `btrfs`, or `xfs` (XFS volumes can grow but not shrink) |
 | `--encrypt` | off | LUKS on `/` |
 | `--username` | `panther` | login name for the primary user |
 | `--keyboard` | none | layout, e.g. `us`, `de` |
@@ -130,7 +130,7 @@ In the bare install environment there's no desktop, so it runs under [`cage`](ht
 8 phases, state persisted to `/tmp/.guix-install-state` after each:
 
 1. Partition (parted, BIOS/EFI auto-detected from `/sys/firmware/efi`)
-2. Format (ext4/btrfs, optional LUKS)
+2. Format (ext4/btrfs/xfs, optional LUKS)
 3. Mount under `/mnt`
 4. Swap file
 5. Generate `system.scm` + `channels.scm` (or fetch enterprise tarball)

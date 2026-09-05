@@ -25,14 +25,16 @@ pub fn step_disk(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Resul
     let choice = ui_or_back!(ui.select("Target disk", &label_refs, default_idx));
     config.disk = devices[choice].clone();
 
-    let fs_options = &["ext4", "btrfs"];
+    let fs_options = &["ext4", "btrfs", "xfs"];
     let fs_default = match config.filesystem {
+        Filesystem::Ext4 => 0,
         Filesystem::Btrfs => 1,
-        _ => 0,
+        Filesystem::Xfs => 2,
     };
     let fs_choice = ui_or_back!(ui.select("Filesystem", fs_options, fs_default));
     config.filesystem = match fs_choice {
         1 => Filesystem::Btrfs,
+        2 => Filesystem::Xfs,
         _ => Filesystem::Ext4,
     };
 

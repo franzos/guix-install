@@ -35,7 +35,7 @@ pub fn mount_actions(config: &SystemConfig) -> Vec<Action> {
 
 /// Builds the swap file creation actions.
 ///
-/// On ext4, creates a zero-filled file then runs `mkswap` + `swapon`.
+/// On ext4 and xfs, creates a zero-filled file then runs `mkswap` + `swapon`.
 /// On btrfs, swap files require NOCOW and contiguous extents, so we use
 /// `btrfs filesystem mkswapfile -s <size>` which handles NOCOW + format
 /// in one shot, then `swapon`.
@@ -43,7 +43,7 @@ pub fn swap_actions(config: &SystemConfig) -> Vec<Action> {
     let path = PathBuf::from("/mnt/swapfile");
 
     match config.filesystem {
-        Filesystem::Ext4 => {
+        Filesystem::Ext4 | Filesystem::Xfs => {
             let size_bytes = (config.swap_size_mb as u64) * 1024 * 1024;
             vec![
                 Action::CreateSwapFile {
@@ -196,6 +196,25 @@ mod tests {
             ])
         );
         assert_eq!(actions[1], Action::cmd(&["swapon", "/mnt/swapfile"]));
+    }
+
+    #[test]
+    fn swap_xfs_uses_plain_swapfile() {
+        let mut config = test_config();
+        config.filesystem = Filesystem::Xfs;
+        config.swap_size_mb = 2048;
+
+        let actions = swap_actions(&config);
+        assert_eq!(actions.len(), 3);
+        assert_eq!(
+            actions[0],
+            Action::CreateSwapFile {
+                path: PathBuf::from("/mnt/swapfile"),
+                size_bytes: 2048 * 1024 * 1024,
+            }
+        );
+        assert_eq!(actions[1], Action::cmd(&["mkswap", "/mnt/swapfile"]));
+        assert_eq!(actions[2], Action::cmd(&["swapon", "/mnt/swapfile"]));
     }
 
     #[test]

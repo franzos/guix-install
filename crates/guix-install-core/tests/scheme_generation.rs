@@ -424,6 +424,41 @@ fn panther_efi_luks_btrfs_gnome() {
     assert!(output.contains("(inherit %os-base)"));
 }
 
+// --- XFS ---
+
+#[test]
+fn guix_bios_plain_xfs_headless() {
+    let mut config = base_config();
+    config.mode = InstallMode::Guix;
+    config.firmware = Firmware::Bios;
+    config.filesystem = Filesystem::Xfs;
+
+    let output = render_operating_system(&config);
+    assert_scheme_structure(&output);
+    assert!(output.contains("(type \"xfs\")"));
+    assert!(!output.contains("\"ext4\""));
+    assert!(output.contains("grub-bootloader"));
+}
+
+#[test]
+fn nonguix_efi_luks_xfs_gnome() {
+    let mut config = base_config();
+    config.mode = InstallMode::Nonguix;
+    config.firmware = Firmware::Efi;
+    config.filesystem = Filesystem::Xfs;
+    config.encryption = Some(EncryptionConfig {
+        device_target: "cryptroot".into(),
+        passphrase: None,
+    });
+    config.desktop = Some(DesktopEnvironment::Gnome);
+
+    let output = render_operating_system(&config);
+    assert_scheme_structure(&output);
+    assert!(output.contains("(type \"xfs\")"));
+    assert!(output.contains("luks-device-mapping"));
+    assert!(output.contains("/boot/efi"));
+}
+
 // --- EFI + LUKS ---
 
 #[test]
