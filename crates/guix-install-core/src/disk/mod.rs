@@ -1,4 +1,5 @@
 pub mod action;
+pub mod btrfs;
 pub mod detect;
 pub mod format;
 pub mod mount;

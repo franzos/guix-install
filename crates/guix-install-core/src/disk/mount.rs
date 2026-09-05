@@ -1,17 +1,36 @@
 use std::path::PathBuf;
 
 use crate::config::{Filesystem, Firmware, SystemConfig};
-use crate::disk::{Action, partition_path};
+use crate::disk::{Action, btrfs, partition_path};
 
 /// Builds the mount action sequence for the target system.
 ///
-/// Always mounts root by label, then for EFI also mounts the boot partition.
-/// Starts the cow-store and creates config directories.
+/// Always mounts root by label (each btrfs subvolume in turn), then for EFI
+/// also mounts the boot partition. Starts the cow-store and creates config
+/// directories.
 pub fn mount_actions(config: &SystemConfig) -> Vec<Action> {
     let mut actions = Vec::new();
 
-    // Mount root by label
-    actions.push(Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+    match config.filesystem {
+        Filesystem::Btrfs => {
+            for subvol in btrfs::SUBVOLUMES {
+                let target = subvol.target_path("/mnt");
+                if subvol.mount_point != "/" {
+                    actions.push(Action::mkdir(&target));
+                }
+                actions.push(Action::cmd(&[
+                    "mount",
+                    "-o",
+                    &subvol.mount_options(),
+                    "LABEL=my-root",
+                    &target,
+                ]));
+            }
+        }
+        Filesystem::Ext4 | Filesystem::Xfs => {
+            actions.push(Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+        }
+    }
 
     // EFI: create and mount boot partition
     if config.firmware == Firmware::Efi {
@@ -38,34 +57,28 @@ pub fn mount_actions(config: &SystemConfig) -> Vec<Action> {
 /// On ext4 and xfs, creates a zero-filled file then runs `mkswap` + `swapon`.
 /// On btrfs, swap files require NOCOW and contiguous extents, so we use
 /// `btrfs filesystem mkswapfile -s <size>` which handles NOCOW + format
-/// in one shot, then `swapon`.
+/// in one shot, then `swapon`. The btrfs swap file lives on the `@swap`
+/// subvolume (see `Filesystem::swap_file_path`).
 pub fn swap_actions(config: &SystemConfig) -> Vec<Action> {
-    let path = PathBuf::from("/mnt/swapfile");
+    let path = format!("/mnt{}", config.filesystem.swap_file_path());
 
     match config.filesystem {
         Filesystem::Ext4 | Filesystem::Xfs => {
             let size_bytes = (config.swap_size_mb as u64) * 1024 * 1024;
             vec![
                 Action::CreateSwapFile {
-                    path: path.clone(),
+                    path: PathBuf::from(&path),
                     size_bytes,
                 },
-                Action::cmd(&["mkswap", "/mnt/swapfile"]),
-                Action::cmd(&["swapon", "/mnt/swapfile"]),
+                Action::cmd(&["mkswap", &path]),
+                Action::cmd(&["swapon", &path]),
             ]
         }
         Filesystem::Btrfs => {
             let size = format!("{}m", config.swap_size_mb);
             vec![
-                Action::cmd(&[
-                    "btrfs",
-                    "filesystem",
-                    "mkswapfile",
-                    "-s",
-                    &size,
-                    "/mnt/swapfile",
-                ]),
-                Action::cmd(&["swapon", "/mnt/swapfile"]),
+                Action::cmd(&["btrfs", "filesystem", "mkswapfile", "-s", &size, &path]),
+                Action::cmd(&["swapon", &path]),
             ]
         }
     }
@@ -106,6 +119,74 @@ mod tests {
             Action::cmd(&["herd", "start", "cow-store", "/mnt"])
         );
         assert_eq!(actions[2], Action::mkdir("/mnt/etc/guix"));
+    }
+
+    #[test]
+    fn mount_btrfs_subvolumes() {
+        let mut config = test_config();
+        config.firmware = Firmware::Bios;
+        config.filesystem = Filesystem::Btrfs;
+
+        let actions = mount_actions(&config);
+        // root + 3 x (mkdir + mount) + cow-store + mkdir config = 9
+        assert_eq!(actions.len(), 9);
+        assert_eq!(
+            actions[0],
+            Action::cmd(&[
+                "mount",
+                "-o",
+                "subvol=@,compress=zstd",
+                "LABEL=my-root",
+                "/mnt"
+            ])
+        );
+        assert_eq!(actions[1], Action::mkdir("/mnt/home"));
+        assert_eq!(
+            actions[2],
+            Action::cmd(&[
+                "mount",
+                "-o",
+                "subvol=@home,compress=zstd",
+                "LABEL=my-root",
+                "/mnt/home"
+            ])
+        );
+        assert_eq!(actions[3], Action::mkdir("/mnt/gnu"));
+        assert_eq!(
+            actions[4],
+            Action::cmd(&[
+                "mount",
+                "-o",
+                "subvol=@gnu,compress=zstd",
+                "LABEL=my-root",
+                "/mnt/gnu"
+            ])
+        );
+        assert_eq!(actions[5], Action::mkdir("/mnt/swap"));
+        assert_eq!(
+            actions[6],
+            Action::cmd(&[
+                "mount",
+                "-o",
+                "subvol=@swap,compress=zstd",
+                "LABEL=my-root",
+                "/mnt/swap"
+            ])
+        );
+        assert_eq!(
+            actions[7],
+            Action::cmd(&["herd", "start", "cow-store", "/mnt"])
+        );
+        assert_eq!(actions[8], Action::mkdir("/mnt/etc/guix"));
+    }
+
+    #[test]
+    fn swap_btrfs_swapon_uses_subvolume_path() {
+        let mut config = test_config();
+        config.filesystem = Filesystem::Btrfs;
+
+        let actions = swap_actions(&config);
+        assert_eq!(actions[1], Action::cmd(&["swapon", "/mnt/swap/swapfile"]));
     }
 
     #[test]
@@ -192,10 +273,10 @@ mod tests {
                 "mkswapfile",
                 "-s",
                 "4096m",
-                "/mnt/swapfile",
+                "/mnt/swap/swapfile",
             ])
         );
-        assert_eq!(actions[1], Action::cmd(&["swapon", "/mnt/swapfile"]));
+        assert_eq!(actions[1], Action::cmd(&["swapon", "/mnt/swap/swapfile"]));
     }
 
     #[test]

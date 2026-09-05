@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 
@@ -87,6 +87,9 @@ struct InstallSession {
     /// at something they care about.
     mount_owned: bool,
     luks_mapper: Option<String>,
+    swap_file: String,
+    /// Mounts nested inside `/mnt` (subvolumes, EFI), in unmount order.
+    nested_mounts: Vec<String>,
 }
 
 impl InstallSession {
@@ -97,6 +100,8 @@ impl InstallSession {
             db_saved: false,
             mount_owned: false,
             luks_mapper,
+            swap_file: format!("{TARGET_DIR}{}", config.filesystem.swap_file_path()),
+            nested_mounts: nested_mount_points(config),
         }
     }
 
@@ -167,19 +172,14 @@ impl Drop for InstallSession {
         // tearing down mounts we found pre-existing (e.g. operator inspection
         // shells, dev environments where /mnt is a real filesystem).
         if self.mount_owned {
-            let _ = exec::run_cmd(&[
-                "swapoff",
-                PathBuf::from(TARGET_DIR)
-                    .join("swapfile")
-                    .to_str()
-                    .unwrap_or("/mnt/swapfile"),
-            ]);
+            let _ = exec::run_cmd(&["swapoff", &self.swap_file]);
             let _ = exec::run_cmd(&["herd", "stop", "cow-store"]);
 
-            // Order matters: boot first (it's mounted *inside* /mnt), then root.
-            if is_mounted("/mnt/boot/efi") {
-                let _ =
-                    rustix::mount::unmount("/mnt/boot/efi", rustix::mount::UnmountFlags::DETACH);
+            // Order matters: nested mounts first, then root.
+            for target in &self.nested_mounts {
+                if is_mounted(target) {
+                    let _ = rustix::mount::unmount(target, rustix::mount::UnmountFlags::DETACH);
+                }
             }
             if is_mounted(TARGET_DIR) {
                 let _ = rustix::mount::unmount(TARGET_DIR, rustix::mount::UnmountFlags::DETACH);
@@ -210,8 +210,10 @@ impl Drop for InstallSession {
 /// missing state. The format phase (2) does survive — partitions stay
 /// formatted on disk.
 fn validate_resume_state(state: &mut InstallState, config: &SystemConfig, ui: &dyn UserInterface) {
-    let needs_efi_boot = config.firmware == crate::config::Firmware::Efi;
-    let mounts_intact = is_mounted(TARGET_DIR) && (!needs_efi_boot || is_mounted("/mnt/boot/efi"));
+    let mounts_intact = is_mounted(TARGET_DIR)
+        && nested_mount_points(config)
+            .iter()
+            .all(|target| is_mounted(target));
 
     if !mounts_intact && state.completed_phases.iter().any(|&p| p >= 3) {
         ui.warn(
@@ -220,6 +222,23 @@ fn validate_resume_state(state: &mut InstallState, config: &SystemConfig, ui: &d
         );
         state.completed_phases.retain(|&p| p < 3);
     }
+}
+
+/// Mount points `phase_mount` establishes inside `/mnt`, deepest first so the
+/// list doubles as unmount order.
+fn nested_mount_points(config: &SystemConfig) -> Vec<String> {
+    let mut targets = Vec::new();
+    if config.firmware == crate::config::Firmware::Efi {
+        targets.push(format!("{TARGET_DIR}/boot/efi"));
+    }
+    if config.filesystem == crate::config::Filesystem::Btrfs {
+        for subvol in disk::btrfs::SUBVOLUMES.iter().rev() {
+            if subvol.mount_point != "/" {
+                targets.push(subvol.target_path(TARGET_DIR));
+            }
+        }
+    }
+    targets
 }
 
 /// Runs the full 8-phase installation sequence.

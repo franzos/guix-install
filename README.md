@@ -90,7 +90,7 @@ Common flags:
 | `--timezone` | `Europe/Berlin` | |
 | `--locale` | `en_US.utf8` | |
 | `--disk` | `/dev/sda` | |
-| `--filesystem` | `ext4` | `btrfs`, or `xfs` (XFS volumes can grow but not shrink) |
+| `--filesystem` | `ext4` | `btrfs` (flat subvolume layout, see below), or `xfs` (XFS volumes can grow but not shrink) |
 | `--encrypt` | off | LUKS on `/` |
 | `--username` | `panther` | login name for the primary user |
 | `--keyboard` | none | layout, e.g. `us`, `de` |
@@ -146,6 +146,7 @@ Re-running picks up at the failed phase. Change disk/mode/firmware and state is 
 - **Substitute keys compiled in** via `include_str!`.
 - **Enterprise tarballs streamed** through `ureq → flate2 → tar`. No intermediate file.
 - **Partition naming** handles NVMe/MMC (`/dev/nvme0n1p1`) vs SATA (`/dev/sda1`) via `disk::partition_path`.
+- **Btrfs gets a flat subvolume layout**: `@` on `/`, `@home` on `/home`, `@gnu` on `/gnu`, `@swap` on `/swap` (holding the swap file), all mounted with `compress=zstd`. A snapshot of `@` leaves user data and the store alone, so `guix gc` keeps freeing space while snapshots are retained, and the swap file doesn't block snapshotting. One caveat: the store's database lives in `/var/guix` on `@`, so if you delete system generations, run `guix gc`, and then roll `@` back past that point, run `guix gc --verify=contents,repair` to refetch what the rolled-back database still expects.
 - **LUKS passphrases**, like passwords, stay in `Zeroizing<String>` and reach `cryptsetup` over stdin (`--key-file -`), never argv, disk, or saved state.
 - **`guix pull` / `guix system init`** run through `libguix` for structured progress (substitute downloads, per-derivation builds) — the same in both frontends. The other shell-outs (partition/format/mount) stay direct.
 - **UI is a trait** (`UserInterface`), and the project is a workspace: `guix-install-core` holds all the logic, with two thin frontends — `guix-install` (CLI, `dialoguer`) and `guix-install-gui` (iced) — plugging in without touching step logic. The CLI build never compiles iced.

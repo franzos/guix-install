@@ -1,5 +1,5 @@
 use crate::config::{DesktopEnvironment, Filesystem, Firmware, SystemConfig};
-use crate::disk::partition_path;
+use crate::disk::{btrfs, partition_path};
 use crate::mode::InstallMode;
 
 pub fn render_operating_system(config: &SystemConfig) -> String {
@@ -119,7 +119,7 @@ fn render_os_form(config: &SystemConfig) -> String {
     parts.push(render_file_systems(config));
 
     parts.push(String::new());
-    parts.push(render_swap());
+    parts.push(render_swap(config));
 
     parts.push(String::new());
     parts.push(render_users(config));
@@ -196,61 +196,69 @@ fn render_file_systems(config: &SystemConfig) -> String {
         Filesystem::Xfs => "xfs",
     };
 
-    let encrypted = config.encryption.is_some();
-    let efi = config.firmware == Firmware::Efi;
+    let root_device = match &config.encryption {
+        Some(enc) => format!("\"/dev/mapper/{}\"", enc.device_target),
+        None => "(file-system-label \"my-root\")".to_string(),
+    };
+    let dependencies = config
+        .encryption
+        .as_ref()
+        .map(|_| "(dependencies mapped-devices)");
 
-    match (efi, encrypted) {
-        (false, false) => {
-            format!(
-                "  (file-systems (cons (file-system\n\
-                 \x20                      (device (file-system-label \"my-root\"))\n\
-                 \x20                      (mount-point \"/\")\n\
-                 \x20                      (type \"{fs_type}\"))\n\
-                 \x20                    %base-file-systems))"
-            )
+    let mut entries: Vec<Vec<String>> = Vec::new();
+
+    match config.filesystem {
+        Filesystem::Btrfs => {
+            for subvol in btrfs::SUBVOLUMES {
+                let mut fields = vec![
+                    format!("(mount-point \"{}\")", subvol.mount_point),
+                    format!("(device {root_device})"),
+                    format!("(type \"{fs_type}\")"),
+                    format!("(options \"{}\")", subvol.mount_options()),
+                ];
+                fields.extend(dependencies.map(String::from));
+                entries.push(fields);
+            }
         }
-        (true, false) => {
-            let boot_device = render_boot_device(config);
-            format!(
-                "  (file-systems (cons* (file-system\n\
-                 \x20                       (device (file-system-label \"my-root\"))\n\
-                 \x20                       (mount-point \"/\")\n\
-                 \x20                       (type \"{fs_type}\"))\n\
-                 \x20                     (file-system\n\
-                 \x20                       (mount-point \"/boot/efi\")\n\
-                 \x20                       (device {boot_device})\n\
-                 \x20                       (type \"vfat\"))\n\
-                 \x20                     %base-file-systems))"
-            )
-        }
-        (false, true) => {
-            let target = &config.encryption.as_ref().unwrap().device_target;
-            format!(
-                "  (file-systems (cons (file-system\n\
-                 \x20                      (mount-point \"/\")\n\
-                 \x20                      (device \"/dev/mapper/{target}\")\n\
-                 \x20                      (type \"{fs_type}\")\n\
-                 \x20                      (dependencies mapped-devices))\n\
-                 \x20                    %base-file-systems))"
-            )
-        }
-        (true, true) => {
-            let boot_device = render_boot_device(config);
-            let target = &config.encryption.as_ref().unwrap().device_target;
-            format!(
-                "  (file-systems (cons* (file-system\n\
-                 \x20                       (mount-point \"/boot/efi\")\n\
-                 \x20                       (device {boot_device})\n\
-                 \x20                       (type \"vfat\"))\n\
-                 \x20                     (file-system\n\
-                 \x20                       (mount-point \"/\")\n\
-                 \x20                       (device \"/dev/mapper/{target}\")\n\
-                 \x20                       (type \"{fs_type}\")\n\
-                 \x20                       (dependencies mapped-devices))\n\
-                 \x20                     %base-file-systems))"
-            )
+        Filesystem::Ext4 | Filesystem::Xfs => {
+            let mut fields = vec![
+                "(mount-point \"/\")".to_string(),
+                format!("(device {root_device})"),
+                format!("(type \"{fs_type}\")"),
+            ];
+            fields.extend(dependencies.map(String::from));
+            entries.push(fields);
         }
     }
+
+    if config.firmware == Firmware::Efi {
+        entries.push(vec![
+            "(mount-point \"/boot/efi\")".to_string(),
+            format!("(device {})", render_boot_device(config)),
+            "(type \"vfat\")".to_string(),
+        ]);
+    }
+
+    let cons = if entries.len() == 1 { "cons" } else { "cons*" };
+    let indent = " ".repeat("  (file-systems (".len() + cons.len() + 1);
+    let field_indent = format!("{indent}  ");
+
+    let rendered: Vec<String> = entries
+        .iter()
+        .map(|fields| {
+            let body = fields
+                .iter()
+                .map(|f| format!("{field_indent}{f}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("(file-system\n{body})")
+        })
+        .collect();
+
+    format!(
+        "  (file-systems ({cons} {}\n{indent}%base-file-systems))",
+        rendered.join(&format!("\n{indent}"))
+    )
 }
 
 fn render_boot_device(config: &SystemConfig) -> String {
@@ -260,8 +268,22 @@ fn render_boot_device(config: &SystemConfig) -> String {
     }
 }
 
-fn render_swap() -> String {
-    "  (swap-devices (list (swap-space (target \"/swapfile\"))))".into()
+fn render_swap(config: &SystemConfig) -> String {
+    let target = config.filesystem.swap_file_path();
+    match config.filesystem {
+        // The swap file sits on its own subvolume; that mount must come first.
+        Filesystem::Btrfs => format!(
+            "  (swap-devices (list (swap-space\n\
+             \x20                      (target \"{target}\")\n\
+             \x20                      (dependencies\n\
+             \x20                       (filter (file-system-mount-point-predicate \"{}\")\n\
+             \x20                               file-systems)))))",
+            btrfs::SWAP_MOUNT_POINT
+        ),
+        Filesystem::Ext4 | Filesystem::Xfs => {
+            format!("  (swap-devices (list (swap-space (target \"{target}\"))))")
+        }
+    }
 }
 
 fn render_users(config: &SystemConfig) -> String {

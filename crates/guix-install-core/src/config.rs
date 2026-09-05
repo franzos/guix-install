@@ -89,6 +89,17 @@ impl fmt::Display for Firmware {
     }
 }
 
+impl Filesystem {
+    /// Swap file location in the installed system. Btrfs keeps it on its own
+    /// subvolume so the root subvolume stays snapshottable.
+    pub fn swap_file_path(&self) -> &'static str {
+        match self {
+            Filesystem::Btrfs => "/swap/swapfile",
+            Filesystem::Ext4 | Filesystem::Xfs => "/swapfile",
+        }
+    }
+}
+
 impl fmt::Display for Filesystem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

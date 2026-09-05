@@ -210,11 +210,15 @@ fn format_btrfs_plain_sata() {
     let mut config = test_config("/dev/sda", "sda");
     config.filesystem = Filesystem::Btrfs;
     let cmds = format_root_commands(&config);
-    assert_eq!(cmds.len(), 1);
+    // mkfs + top-level mount + 4 subvolumes + umount
+    assert_eq!(cmds.len(), 7);
     assert_eq!(
         cmds[0],
         vec!["mkfs.btrfs", "-f", "-L", "my-root", "/dev/sda2"]
     );
+    assert_eq!(cmds[1], vec!["mount", "/dev/sda2", "/mnt"]);
+    assert_eq!(cmds[2], vec!["btrfs", "subvolume", "create", "/mnt/@"]);
+    assert_eq!(cmds[6], vec!["umount", "/mnt"]);
 }
 
 #[test]
@@ -238,8 +242,9 @@ fn format_btrfs_encrypted() {
         passphrase: None,
     });
     let cmds = format_root_commands(&config);
-    assert_eq!(cmds.len(), 1);
+    assert_eq!(cmds.len(), 7);
     assert_eq!(cmds[0][4], "/dev/mapper/cryptroot");
+    assert_eq!(cmds[1][1], "/dev/mapper/cryptroot");
 }
 
 #[test]

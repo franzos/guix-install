@@ -402,6 +402,51 @@ fn guix_efi_plain_btrfs_gnome() {
     assert!(output.contains("\"btrfs\""));
     assert!(!output.contains("\"ext4\""));
     assert!(output.contains("grub-efi-bootloader"));
+
+    // Flat subvolume layout, one file-system per subvolume, plus the swap
+    // file on its own subvolume with an explicit mount dependency.
+    assert!(output.contains("(options \"subvol=@,compress=zstd\")"));
+    assert!(output.contains("(mount-point \"/home\")"));
+    assert!(output.contains("(options \"subvol=@home,compress=zstd\")"));
+    assert!(output.contains("(mount-point \"/gnu\")"));
+    assert!(output.contains("(options \"subvol=@gnu,compress=zstd\")"));
+    assert!(output.contains("(mount-point \"/swap\")"));
+    assert!(output.contains("(options \"subvol=@swap,compress=zstd\")"));
+    assert!(output.contains("(target \"/swap/swapfile\")"));
+    assert!(output.contains("(file-system-mount-point-predicate \"/swap\")"));
+    assert!(!output.contains("(dependencies mapped-devices)"));
+}
+
+#[test]
+fn btrfs_luks_subvolumes_depend_on_mapped_devices() {
+    let mut config = base_config();
+    config.mode = InstallMode::Guix;
+    config.firmware = Firmware::Bios;
+    config.filesystem = Filesystem::Btrfs;
+    config.encryption = Some(EncryptionConfig {
+        device_target: "cryptroot".into(),
+        passphrase: None,
+    });
+
+    let output = render_operating_system(&config);
+    assert_scheme_structure(&output);
+    assert_eq!(output.matches("(dependencies mapped-devices)").count(), 4);
+    assert_eq!(
+        output.matches("(device \"/dev/mapper/cryptroot\")").count(),
+        4
+    );
+}
+
+#[test]
+fn ext4_keeps_root_swapfile() {
+    let mut config = base_config();
+    config.mode = InstallMode::Guix;
+    config.filesystem = Filesystem::Ext4;
+
+    let output = render_operating_system(&config);
+    assert!(output.contains("(swap-space (target \"/swapfile\"))"));
+    assert!(!output.contains("subvol="));
+    assert!(!output.contains("file-system-mount-point-predicate"));
 }
 
 #[test]

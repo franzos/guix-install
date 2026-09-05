@@ -1,5 +1,5 @@
 use crate::config::{Filesystem, Firmware, SystemConfig};
-use crate::disk::partition_path;
+use crate::disk::{btrfs, partition_path};
 
 /// Builds cryptsetup commands for LUKS encryption on partition 2.
 ///
@@ -44,6 +44,8 @@ pub fn encryption_commands(device: &str, target: &str) -> Vec<Vec<String>> {
 ///
 /// If encrypted, formats `/dev/mapper/<target>`. Otherwise, formats partition 2.
 /// For ext4, also runs `tune2fs -O ^metadata_csum_seed` (Guix compatibility workaround).
+/// For btrfs, also creates the flat subvolume layout (see `disk::btrfs`) via a
+/// temporary top-level mount.
 pub fn format_root_commands(config: &SystemConfig) -> Vec<Vec<String>> {
     let root_device = if let Some(enc) = &config.encryption {
         format!("/dev/mapper/{}", enc.device_target)
@@ -75,6 +77,7 @@ pub fn format_root_commands(config: &SystemConfig) -> Vec<Vec<String>> {
                     .map(String::from)
                     .collect(),
             );
+            cmds.extend(btrfs_subvolume_commands(&root_device));
         }
         Filesystem::Xfs => {
             cmds.push(
@@ -86,6 +89,25 @@ pub fn format_root_commands(config: &SystemConfig) -> Vec<Vec<String>> {
         }
     }
 
+    cmds
+}
+
+/// Mounts the btrfs top level, creates every subvolume, and unmounts again.
+fn btrfs_subvolume_commands(root_device: &str) -> Vec<Vec<String>> {
+    let mut cmds = vec![vec![
+        "mount".to_string(),
+        root_device.to_string(),
+        "/mnt".to_string(),
+    ]];
+    for subvol in btrfs::SUBVOLUMES {
+        cmds.push(vec![
+            "btrfs".to_string(),
+            "subvolume".to_string(),
+            "create".to_string(),
+            format!("/mnt/{}", subvol.name),
+        ]);
+    }
+    cmds.push(vec!["umount".to_string(), "/mnt".to_string()]);
     cmds
 }
 
@@ -239,11 +261,18 @@ mod tests {
         config.encryption = None;
 
         let cmds = format_root_commands(&config);
-        assert_eq!(cmds.len(), 1);
+        // mkfs + top-level mount + 4 subvolumes + umount = 7
+        assert_eq!(cmds.len(), 7);
         assert_eq!(
             cmds[0],
             vec!["mkfs.btrfs", "-f", "-L", "my-root", "/dev/sda2"]
         );
+        assert_eq!(cmds[1], vec!["mount", "/dev/sda2", "/mnt"]);
+        assert_eq!(cmds[2], vec!["btrfs", "subvolume", "create", "/mnt/@"]);
+        assert_eq!(cmds[3], vec!["btrfs", "subvolume", "create", "/mnt/@home"]);
+        assert_eq!(cmds[4], vec!["btrfs", "subvolume", "create", "/mnt/@gnu"]);
+        assert_eq!(cmds[5], vec!["btrfs", "subvolume", "create", "/mnt/@swap"]);
+        assert_eq!(cmds[6], vec!["umount", "/mnt"]);
     }
 
     #[test]
@@ -256,11 +285,13 @@ mod tests {
         });
 
         let cmds = format_root_commands(&config);
-        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds.len(), 7);
         assert_eq!(
             cmds[0],
             vec!["mkfs.btrfs", "-f", "-L", "my-root", "/dev/mapper/cryptroot"]
         );
+        assert_eq!(cmds[1], vec!["mount", "/dev/mapper/cryptroot", "/mnt"]);
+        assert_eq!(cmds[6], vec!["umount", "/mnt"]);
     }
 
     #[test]
@@ -340,8 +371,8 @@ mod tests {
         config.encryption = None;
 
         let cmds = format_commands(&config);
-        // no encryption, no efi, btrfs (1)
-        assert_eq!(cmds.len(), 1);
+        // no encryption, no efi, btrfs (1) + subvolume setup (6)
+        assert_eq!(cmds.len(), 7);
         assert_eq!(cmds[0][0], "mkfs.btrfs");
     }
 
