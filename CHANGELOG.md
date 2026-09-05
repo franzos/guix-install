@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.17] - 2026-09-05
+
+### Added
+- Btrfs installs get a flat subvolume layout: `@`, `@home`, `@gnu`, `@swap`.
+- Btrfs mounts use `compress=zstd`.
+
+### Changed
+- Btrfs swap file moves to its own subvolume, so `/` stays snapshottable.
+
 ## [0.1.16] - 2026-09-05
 
 ### Added
