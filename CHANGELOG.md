@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.16] - 2026-09-05
+
+### Added
+- XFS as a root filesystem option, next to ext4 and btrfs.
+
 ## [0.1.15] - 2026-09-05
 
 ### Changed
