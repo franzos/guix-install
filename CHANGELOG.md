@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.15] - 2026-09-05
+
+### Changed
+- Dependency updates clearing four RUSTSEC advisories in the GUI build.
+
 ## [0.1.14] - 2026-07-23
 
 ### Added
