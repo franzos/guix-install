@@ -365,18 +365,30 @@ fn render_users(config: &SystemConfig) -> String {
 }
 
 fn render_packages(config: &SystemConfig) -> Option<String> {
-    match &config.mode {
+    let extra = config.desktop.as_ref().map_or(&[][..], desktop_packages);
+    let base = match &config.mode {
         // Desktop overrides the packages inherited from %os-base with
         // %os-desktop-packages, which adds the graphical Guix frontend (guix-gui).
         // Headless inherits %os-base-packages via (inherit %os-base), so no line.
         // Hardware-token / blueman extras the old %panther-desktop-packages
         // bundled can be re-added via Advanced > Edit system.scm.
-        InstallMode::Panther if config.desktop.is_some() => {
-            Some("  (packages %os-desktop-packages)".into())
-        }
-        InstallMode::Panther => None,
-        _ => Some("  (packages %base-packages)".into()),
+        InstallMode::Panther if config.desktop.is_some() => "%os-desktop-packages",
+        InstallMode::Panther => return None,
+        _ => "%base-packages",
+    };
+    if extra.is_empty() {
+        return Some(format!("  (packages {base})"));
     }
+    let specs = extra
+        .iter()
+        .map(|p| format!("\"{p}\""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(format!(
+        "  (packages (append (map specification->package\n\
+         \x20                        '({specs}))\n\
+         \x20                   {base}))"
+    ))
 }
 
 fn render_services(config: &SystemConfig) -> String {
@@ -403,9 +415,7 @@ fn render_nonguix_services(config: &SystemConfig) -> String {
         "%base-services"
     };
 
-    if let Some(de) = &config.desktop {
-        service_list.push(desktop_service(de));
-    }
+    service_list.extend(config.desktop.as_ref().and_then(desktop_service));
 
     service_list.push("(service openssh-service-type)".into());
 
@@ -450,9 +460,7 @@ fn render_panther_services(config: &SystemConfig) -> String {
     }
     service_list.push("(service openssh-service-type)".into());
 
-    if let Some(de) = &config.desktop {
-        service_list.push(desktop_service(de));
-    }
+    service_list.extend(config.desktop.as_ref().and_then(desktop_service));
 
     if service_list.is_empty() {
         format!("  (services {base})")
@@ -484,9 +492,7 @@ fn render_standard_services(config: &SystemConfig) -> String {
         "%base-services"
     };
 
-    if let Some(de) = &config.desktop {
-        service_list.push(desktop_service(de));
-    }
+    service_list.extend(config.desktop.as_ref().and_then(desktop_service));
 
     service_list.push("(service openssh-service-type)".into());
 
@@ -503,17 +509,26 @@ fn render_standard_services(config: &SystemConfig) -> String {
     )
 }
 
-fn desktop_service(de: &DesktopEnvironment) -> String {
+/// Window managers have no service type; they come in via `desktop_packages`.
+fn desktop_service(de: &DesktopEnvironment) -> Option<String> {
     let svc = match de {
         DesktopEnvironment::Gnome => "gnome-desktop-service-type",
         DesktopEnvironment::Kde => "plasma-desktop-service-type",
         DesktopEnvironment::Xfce => "xfce-desktop-service-type",
         DesktopEnvironment::Mate => "mate-desktop-service-type",
-        DesktopEnvironment::Sway => "sway-service-type",
-        DesktopEnvironment::I3 => "i3-service-type",
         DesktopEnvironment::Lxqt => "lxqt-desktop-service-type",
+        DesktopEnvironment::Sway | DesktopEnvironment::I3 => return None,
     };
-    format!("(service {svc})")
+    Some(format!("(service {svc})"))
+}
+
+/// Same package sets as the Guix installer (gnu/installer/services.scm).
+fn desktop_packages(de: &DesktopEnvironment) -> &'static [&'static str] {
+    match de {
+        DesktopEnvironment::Sway => &["sway", "wmenu", "foot"],
+        DesktopEnvironment::I3 => &["i3-wm", "i3status", "dmenu", "st"],
+        _ => &[],
+    }
 }
 
 #[cfg(test)]

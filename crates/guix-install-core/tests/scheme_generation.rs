@@ -641,3 +641,34 @@ fn post_install_note_names_software_only_on_panther_desktop() {
     config.mode = InstallMode::Nonguix;
     assert!(post_install_note(&config).contains("guix pull"));
 }
+
+// --- Window managers: packages instead of a desktop service ---
+
+#[test]
+fn window_managers_render_as_packages() {
+    for (mode, base) in [
+        (InstallMode::Guix, "%base-packages"),
+        (InstallMode::Nonguix, "%base-packages"),
+        (InstallMode::Panther, "%os-desktop-packages"),
+    ] {
+        for (de, specs) in [
+            (DesktopEnvironment::Sway, r#"'("sway" "wmenu" "foot")"#),
+            (
+                DesktopEnvironment::I3,
+                r#"'("i3-wm" "i3status" "dmenu" "st")"#,
+            ),
+        ] {
+            let mut config = base_config();
+            config.mode = mode.clone();
+            config.desktop = Some(de);
+
+            let output = render_operating_system(&config);
+            assert_scheme_structure(&output);
+            assert!(output.contains("(packages (append (map specification->package"));
+            assert!(output.contains(specs), "missing {specs}\n\n{output}");
+            assert!(output.contains(&format!("{base}))")));
+            assert!(!output.contains("sway-service-type"));
+            assert!(!output.contains("i3-service-type"));
+        }
+    }
+}

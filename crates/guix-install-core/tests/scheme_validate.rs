@@ -192,3 +192,38 @@ fn panther_efi_btrfs_luks_gnome() {
     c.desktop = Some(DesktopEnvironment::Gnome);
     validate(&c);
 }
+
+fn validate_all_desktops(mode: InstallMode) {
+    for de in [
+        DesktopEnvironment::Gnome,
+        DesktopEnvironment::Kde,
+        DesktopEnvironment::Xfce,
+        DesktopEnvironment::Mate,
+        DesktopEnvironment::Sway,
+        DesktopEnvironment::I3,
+        DesktopEnvironment::Lxqt,
+    ] {
+        let mut c = base_config();
+        c.mode = mode.clone();
+        c.desktop = Some(de);
+        validate(&c);
+    }
+}
+
+#[test]
+#[ignore = "requires guix"]
+fn guix_all_desktops() {
+    validate_all_desktops(InstallMode::Guix);
+}
+
+#[test]
+#[ignore = "requires guix; first run pulls nonguix channel"]
+fn nonguix_all_desktops() {
+    validate_all_desktops(InstallMode::Nonguix);
+}
+
+#[test]
+#[ignore = "requires guix; first run pulls panther channel"]
+fn panther_all_desktops() {
+    validate_all_desktops(InstallMode::Panther);
+}
