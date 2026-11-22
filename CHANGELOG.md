@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.19] - 2026-11-22
+
+### Fixed
+- Sway and i3 installs failed on a nonexistent service type.
+
 ## [0.1.18] - 2026-11-22
 
 ### Added
