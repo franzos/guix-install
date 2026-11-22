@@ -652,10 +652,13 @@ fn window_managers_render_as_packages() {
         (InstallMode::Panther, "%os-desktop-packages"),
     ] {
         for (de, specs) in [
-            (DesktopEnvironment::Sway, r#"'("sway" "wmenu" "foot")"#),
+            (
+                DesktopEnvironment::Sway,
+                r#"'("sway" "wmenu" "foot" "gsettings-desktop-schemas")"#,
+            ),
             (
                 DesktopEnvironment::I3,
-                r#"'("i3-wm" "i3status" "dmenu" "st")"#,
+                r#"'("i3-wm" "i3status" "dmenu" "st" "gsettings-desktop-schemas")"#,
             ),
         ] {
             let mut config = base_config();

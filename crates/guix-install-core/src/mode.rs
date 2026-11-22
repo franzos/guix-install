@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+pub const BORDEAUX_GUIX_URL: &str = "https://bordeaux.guix.gnu.org";
 pub const CI_GUIX_URL: &str = "https://ci.guix.gnu.org";
 pub const NONGUIX_URL: &str = "https://substitutes.nonguix.org";
 pub const GOFRANZ_URL: &str = "https://substitutes.guix.gofranz.com";
@@ -42,7 +43,8 @@ impl InstallMode {
     }
 
     pub fn substitute_urls(&self) -> Vec<String> {
-        let mut urls = vec![CI_GUIX_URL.to_string()];
+        // Both of Guix's default servers; each carries builds the other lacks.
+        let mut urls = vec![BORDEAUX_GUIX_URL.to_string(), CI_GUIX_URL.to_string()];
         match self {
             InstallMode::Guix => {}
             InstallMode::Nonguix => urls.push(NONGUIX_URL.into()),

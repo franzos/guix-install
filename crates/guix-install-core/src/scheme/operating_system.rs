@@ -522,11 +522,18 @@ fn desktop_service(de: &DesktopEnvironment) -> Option<String> {
     Some(format!("(service {svc})"))
 }
 
-/// Same package sets as the Guix installer (gnu/installer/services.scm).
+/// The Guix installer's package sets (gnu/installer/services.scm), plus the
+/// GSettings schemas the GDM greeter needs and no desktop service provides here.
 fn desktop_packages(de: &DesktopEnvironment) -> &'static [&'static str] {
     match de {
-        DesktopEnvironment::Sway => &["sway", "wmenu", "foot"],
-        DesktopEnvironment::I3 => &["i3-wm", "i3status", "dmenu", "st"],
+        DesktopEnvironment::Sway => &["sway", "wmenu", "foot", "gsettings-desktop-schemas"],
+        DesktopEnvironment::I3 => &[
+            "i3-wm",
+            "i3status",
+            "dmenu",
+            "st",
+            "gsettings-desktop-schemas",
+        ],
         _ => &[],
     }
 }
