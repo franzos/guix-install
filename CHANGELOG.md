@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.20] - 2026-11-22
+
+### Fixed
+- Sway and i3 installs booted without a login screen.
+- Installs built packages that bordeaux.guix.gnu.org already had.
+
 ## [0.1.19] - 2026-11-22
 
 ### Fixed
