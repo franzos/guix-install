@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.18] - 2026-11-22
+
+### Added
+- Next-steps note after install, pointing to Software or the commands.
+
+### Changed
+- Nonguix installs reuse the running Guix instead of rebuilding it.
+- Reconfiguring a nonguix install no longer fetches channels each time.
+
 ## [0.1.17] - 2026-09-05
 
 ### Added
