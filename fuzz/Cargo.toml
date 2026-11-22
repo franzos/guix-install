@@ -1,0 +1,40 @@
+[package]
+name = "guix-install-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+guix-install-core = { path = "../crates/guix-install-core" }
+
+[[bin]]
+name = "connman"
+path = "fuzz_targets/connman.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "keyboard"
+path = "fuzz_targets/keyboard.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lsblk"
+path = "fuzz_targets/lsblk.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config"
+path = "fuzz_targets/config.rs"
+test = false
+doc = false
+bench = false

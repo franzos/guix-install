@@ -1,0 +1,35 @@
+# Advisories OSV-Scanner and OpenSSF Scorecard skip for Cargo.lock. Every entry
+# comes in through the iced 0.14 GUI stack and has no compatible fixed release;
+# drop an entry once the crate leaves the lockfile.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0253"
+reason = "lru: pop() is unsound only if a key's Drop panics. cryoglyph keys its glyph cache with a Copy struct."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0441"
+reason = "pin-utils: unmaintained notice, no vulnerability. Only wasmtimer depends on it, which is not built on Linux."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0206"
+reason = "rustybuzz: unmaintained notice, no vulnerability. Text shaping for resvg."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0192"
+reason = "ttf-parser: unmaintained notice, no vulnerability. Font parsing for cosmic-text and resvg."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+reason = "zbus_names: unmaintained notice, no vulnerability. Merged into zbus 6; zbus 5 comes from mundy via iced_winit."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+reason = "zvariant: unmaintained notice, no vulnerability. Merged into zbus 6; zbus 5 comes from mundy via iced_winit."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+reason = "zvariant_derive: unmaintained notice, no vulnerability. Merged into zbus 6; zbus 5 comes from mundy via iced_winit."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0436"
+reason = "paste: unmaintained notice, no vulnerability. Only metal depends on it, which is not built on Linux."

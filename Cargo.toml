@@ -5,6 +5,7 @@ members = [
     "crates/guix-install",
     "crates/guix-install-gui",
 ]
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.18"
