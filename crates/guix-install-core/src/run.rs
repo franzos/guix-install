@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::config::SystemConfig;
 use crate::install;
 use crate::installer_log;
+use crate::mode::InstallMode;
 use crate::resume::InstallState;
 use crate::scheme::operating_system::render_operating_system;
 use crate::steps::desktop::step_desktop;
@@ -81,6 +82,7 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
         && let Some(config) = handle_resume(ui, state)?
     {
         install::execute_installation(&config, ui)?;
+        ui.completion_note(&post_install_note(&config));
         return Ok(());
     }
 
@@ -144,5 +146,22 @@ pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> 
     }
 
     install::execute_installation(&config, ui)?;
+    ui.completion_note(&post_install_note(&config));
     Ok(())
+}
+
+/// "Next steps" note shown after a successful install.
+///
+/// Only a Panther desktop ships the Software app; everything else gets the
+/// commands.
+pub fn post_install_note(config: &SystemConfig) -> String {
+    if matches!(config.mode, InstallMode::Panther) && config.desktop.is_some() {
+        "After restarting, open Software and choose \"Update everything\" to get the latest \
+         apps and security fixes."
+            .into()
+    } else {
+        "After restarting, run `guix pull`, then `sudo guix system reconfigure \
+         /etc/system.scm`, to get the latest packages and security fixes."
+            .into()
+    }
 }

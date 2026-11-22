@@ -22,8 +22,9 @@ pub fn render_operating_system(config: &SystemConfig) -> String {
     sections.join("\n")
 }
 
-/// Nonguix-only top-level defines: the channel list baked into the guix service,
-/// plus the substitute server's public key as a file-like object.
+/// Nonguix-only top-level defines: the channel list and the guix package baked
+/// into the guix service, plus the substitute server's public key as a file-like
+/// object.
 fn render_nonguix_defines() -> String {
     // 9-space continuation indent aligns the channel form under `(cons* (channel`.
     let channel = crate::scheme::channels::nonguix_channel_form("         ");
@@ -36,7 +37,30 @@ fn render_nonguix_defines() -> String {
          \n\
          (define %nonguix-substitute-key\n\
          \x20 (plain-file \"substitutes.nonguix.org.pub\"\n\
-         \x20  \"{key}\"))"
+         \x20  \"{key}\"))\n\
+         \n\
+         ;; Reuse the running guix's profile on its own architecture; build from\n\
+         ;; the channels otherwise (another system, or no profile).\n\
+         (define %nonguix-guix\n\
+         \x20 (let ((from-channels (guix-for-channels %nonguix-channels))\n\
+         \x20       (profile (and=> (current-profile) canonicalize-path)))\n\
+         \x20   (if (and profile (direct-store-path? profile))\n\
+         \x20       (package\n\
+         \x20         (inherit from-channels)\n\
+         \x20         (build-system\n\
+         \x20           (build-system\n\
+         \x20             (name 'profile)\n\
+         \x20             (description \"Reuse a guix profile, or build from channels.\")\n\
+         \x20             (lower\n\
+         \x20              (lambda* (name #:key system target #:allow-other-keys #:rest args)\n\
+         \x20                (if (string=? system %system)\n\
+         \x20                    ((build-system-lower trivial-build-system)\n\
+         \x20                     name #:system system #:target target\n\
+         \x20                     #:inputs '() #:native-inputs '() #:outputs '(\"out\")\n\
+         \x20                     #:builder #~(symlink #$profile #$output))\n\
+         \x20                    (apply (build-system-lower channel-build-system)\n\
+         \x20                           name args)))))))\n\
+         \x20       from-channels)))"
     )
 }
 
@@ -69,6 +93,15 @@ fn render_use_modules(config: &SystemConfig) -> String {
             lines.push("(use-modules (guix channels))".into());
             // plain-file for the substitute key.
             lines.push("(use-modules (guix gexp))".into());
+            // current-profile, package, direct-store-path?, the build systems
+            // and %system for %nonguix-guix.
+            lines.push("(use-modules (guix describe))".into());
+            lines.push("(use-modules (guix packages))".into());
+            lines.push("(use-modules (guix store))".into());
+            lines.push("(use-modules (guix build-system))".into());
+            lines.push("(use-modules (guix build-system channel))".into());
+            lines.push("(use-modules (guix build-system trivial))".into());
+            lines.push("(use-modules ((guix config) #:select (%system)))".into());
         }
         InstallMode::Panther => {
             lines.push("(use-modules (gnu))".into());
@@ -360,8 +393,7 @@ fn render_nonguix_services(config: &SystemConfig) -> String {
     // %base-services/%desktop-services is rewritten to build the system's guix
     // from the nonguix channel and authorize its substitute server + key. This
     // gives the installed system nonguix provenance (`guix describe`) and usable
-    // channel modules without a manual `guix pull`, at the cost of building
-    // guix-for-channels during `guix system init`.
+    // channel modules without a manual `guix pull`.
     let mut service_list: Vec<String> = Vec::new();
 
     let base = if config.desktop.is_some() {
@@ -391,7 +423,7 @@ fn render_nonguix_services(config: &SystemConfig) -> String {
          \x20    (guix-service-type config =>\n\
          \x20      (guix-configuration\n\
          \x20        (inherit config)\n\
-         \x20        (guix (guix-for-channels %nonguix-channels))\n\
+         \x20        (guix %nonguix-guix)\n\
          \x20        (channels %nonguix-channels)\n\
          \x20        (substitute-urls (cons \"https://substitutes.nonguix.org\"\n\
          \x20                               %default-substitute-urls))\n\

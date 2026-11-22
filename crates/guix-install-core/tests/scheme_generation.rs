@@ -624,3 +624,20 @@ fn config_id_validation() {
     assert!(validate_config_id("../../etc/passwd").is_err());
     assert!(validate_config_id("id with spaces").is_err());
 }
+
+#[test]
+fn post_install_note_names_software_only_on_panther_desktop() {
+    use guix_install_core::run::post_install_note;
+
+    let mut config = base_config();
+    config.mode = InstallMode::Panther;
+    config.desktop = Some(DesktopEnvironment::Gnome);
+    assert!(post_install_note(&config).contains("Software"));
+
+    config.desktop = None;
+    assert!(post_install_note(&config).contains("guix pull"));
+
+    let mut config = base_config();
+    config.mode = InstallMode::Nonguix;
+    assert!(post_install_note(&config).contains("guix pull"));
+}
