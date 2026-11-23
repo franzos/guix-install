@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.21] - 2026-11-23
+
+### Added
+- Summary lists the btrfs subvolumes; banner and log show the version.
+
+### Changed
+- Partitions are referenced by UUID, not by label or device path.
+- The disk is released after every install, finished or failed.
+- A failed install keeps your answers and restarts from partitioning.
+
+### Fixed
+- Second install on a machine with two disks did not boot.
+- Btrfs over a former ext4 or xfs partition failed to format.
+- Reinstalling in the same session failed with a parted error.
+- Retrying a failed btrfs install failed on the existing swap file.
+- A disk still in use now stops the install with a clear message.
+
 ## [0.1.20] - 2026-11-22
 
 ### Fixed
