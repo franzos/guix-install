@@ -19,6 +19,14 @@ pub fn partition_path(device: &str, num: u32) -> String {
     }
 }
 
+/// Device holding the root filesystem: the LUKS mapping, or partition 2.
+pub fn root_device(config: &crate::config::SystemConfig) -> String {
+    match &config.encryption {
+        Some(enc) => format!("/dev/mapper/{}", enc.device_target),
+        None => partition_path(&config.disk.dev_path, 2),
+    }
+}
+
 /// Formats a byte count into a human-readable string (e.g. "120 GB").
 pub fn format_size(bytes: u64) -> String {
     const GB: u64 = 1_000_000_000;

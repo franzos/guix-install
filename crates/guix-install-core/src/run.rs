@@ -31,15 +31,21 @@ pub fn handle_resume(
     let mode = state.config.mode.label();
     let disk = &state.config.disk.dev_path;
 
-    ui.info(&format!(
-        "Found incomplete installation: completed through phase {last}/8 \
-         (mode={mode}, disk={disk})."
-    ));
+    if last == 0 {
+        ui.info(&format!(
+            "Found the settings of an installation that failed (mode={mode}, disk={disk})."
+        ));
+    } else {
+        ui.info(&format!(
+            "Found incomplete installation: completed through phase {last}/8 \
+             (mode={mode}, disk={disk})."
+        ));
+    }
 
     let options = &["Resume previous installation", "Discard and start fresh"];
     let choice = ui.select("What next?", options, 0)?;
     if choice != 0 {
-        InstallState::cleanup()?;
+        install::discard_previous(&state)?;
         ui.info("Discarded previous state.");
         return Ok(None);
     }
@@ -70,7 +76,11 @@ pub fn handle_resume(
 pub fn run_interactive(ui: &mut dyn UserInterface, dry_run: bool) -> Result<()> {
     let _ = installer_log::open(std::path::Path::new(installer_log::LIVE_LOG_PATH));
 
-    ui.info("guix-install — Guix System Installer");
+    ui.info(concat!(
+        "guix-install ",
+        env!("CARGO_PKG_VERSION"),
+        " — Guix System Installer"
+    ));
     ui.info("");
 
     // A GUI keyboard-relaunch leaves the in-progress config here; restore it first

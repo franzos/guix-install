@@ -675,3 +675,36 @@ fn window_managers_render_as_packages() {
         }
     }
 }
+
+// --- Partitions referenced by UUID ---
+
+#[test]
+fn partitions_are_referenced_by_uuid() {
+    let uuid = "0f6b1c2e-7a41-4c1d-9b55-3e8a2f4d6c10";
+    for (filesystem, fs_type) in [
+        (Filesystem::Ext4, "ext4"),
+        (Filesystem::Btrfs, "btrfs"),
+        (Filesystem::Xfs, "xfs"),
+    ] {
+        let mut config = base_config();
+        config.mode = InstallMode::Guix;
+        config.firmware = Firmware::Efi;
+        config.filesystem = filesystem;
+        config.disk.root_partition_uuid = Some(uuid.into());
+        config.disk.boot_partition_uuid = Some("1A2B-3C4D".into());
+
+        let output = render_operating_system(&config);
+        assert_scheme_structure(&output);
+        assert!(output.contains(&format!("(device (uuid \"{uuid}\" '{fs_type}))")));
+        assert!(output.contains("(device (uuid \"1A2B-3C4D\" 'fat32))"));
+        assert!(!output.contains("file-system-label"));
+
+        config.encryption = Some(EncryptionConfig {
+            device_target: "cryptroot".into(),
+            passphrase: None,
+        });
+        let output = render_operating_system(&config);
+        assert!(output.contains(&format!("(source (uuid \"{uuid}\"))")));
+        assert!(output.contains("(device \"/dev/mapper/cryptroot\")"));
+    }
+}

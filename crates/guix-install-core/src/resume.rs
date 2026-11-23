@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::SystemConfig;
 
-const STATE_FILE: &str = "/tmp/.guix-install-state";
+/// Not under `/tmp`: the cow-store binds the target's `/tmp` over it mid-install.
+const STATE_FILE: &str = "/run/guix-install-state";
 
 /// Persisted installation state for resume-on-failure support.
 ///
@@ -34,7 +35,26 @@ impl InstallState {
         }
     }
 
-    /// Writes the current state to the state file on the target filesystem.
+    /// The saved config if `config` describes the same install, else `None`.
+    ///
+    /// A re-run picks fresh partition UUIDs, so the saved ones win. An edited
+    /// system.scm embeds the fresh ones and can't be reconciled.
+    pub fn resume_config(&self, config: &SystemConfig) -> Option<SystemConfig> {
+        let mut candidate = config.clone();
+        candidate.disk.boot_partition_uuid = self.config.disk.boot_partition_uuid.clone();
+        candidate.disk.root_partition_uuid = self.config.disk.root_partition_uuid.clone();
+
+        let same_uuids = config.disk.root_partition_uuid == candidate.disk.root_partition_uuid
+            && config.disk.boot_partition_uuid == candidate.disk.boot_partition_uuid;
+        if config.system_scm_override.is_some() && !same_uuids {
+            return None;
+        }
+        let saved = serde_json::to_value(&self.config).ok()?;
+        let wanted = serde_json::to_value(&candidate).ok()?;
+        (saved == wanted).then_some(candidate)
+    }
+
+    /// Writes the current state to the state file.
     pub fn save(&self) -> Result<()> {
         let json = serde_json::to_string_pretty(self)?;
         std::fs::write(STATE_FILE, json)?;
@@ -47,8 +67,8 @@ impl InstallState {
             return Ok(None);
         }
         let data = std::fs::read_to_string(STATE_FILE)?;
-        let state: InstallState = serde_json::from_str(&data)?;
-        Ok(Some(state))
+        // A state file this version can't read is no state at all.
+        Ok(serde_json::from_str(&data).ok())
     }
 
     /// Removes the state file after a successful installation.
@@ -118,6 +138,36 @@ mod tests {
         let loaded: SystemConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded.keyboard_layout.as_deref(), Some("de"));
         assert!(loaded.password.is_none()); // serde(skip) — never serialized
+    }
+
+    #[test]
+    fn resume_requires_the_same_install() {
+        let mut saved = SystemConfig::default();
+        saved.disk.assign_partition_uuids();
+        let state = InstallState::new(&saved);
+
+        // A re-run detects the disk again and draws fresh UUIDs; the saved ones win.
+        let mut rerun = saved.clone();
+        rerun.disk.root_partition_uuid = None;
+        rerun.disk.boot_partition_uuid = None;
+        rerun.disk.assign_partition_uuids();
+        let resumed = state.resume_config(&rerun).expect("same install resumes");
+        assert_eq!(
+            resumed.disk.root_partition_uuid,
+            saved.disk.root_partition_uuid
+        );
+
+        let mut other_fs = rerun.clone();
+        other_fs.filesystem = crate::config::Filesystem::Btrfs;
+        assert!(state.resume_config(&other_fs).is_none());
+
+        let mut encrypted = rerun.clone();
+        encrypted.encryption = Some(crate::config::EncryptionConfig::default());
+        assert!(state.resume_config(&encrypted).is_none());
+
+        let mut edited = rerun.clone();
+        edited.system_scm_override = Some("(operating-system)".into());
+        assert!(state.resume_config(&edited).is_none());
     }
 
     #[test]

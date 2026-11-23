@@ -23,7 +23,7 @@ tar = "0.4"
 flate2 = "1"
 sha-crypt = { version = "0.6", default-features = false }
 zeroize = "1"
-rustix = { version = "0.38", features = ["mount", "process", "thread"] }
+rustix = { version = "0.38", features = ["fs", "mount", "process", "thread"] }
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 dialoguer = { version = "0.11", features = ["fuzzy-select"] }

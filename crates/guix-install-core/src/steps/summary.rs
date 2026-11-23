@@ -162,13 +162,21 @@ fn partition_preview(config: &SystemConfig) -> Vec<String> {
     } else {
         format!("{} {} root (rest of disk)", part(2), config.filesystem)
     };
-    match config.firmware {
+    let mut layout = match config.firmware {
         Firmware::Efi => vec![
             format!("{} 200 MB EFI System Partition (FAT32)", part(1)),
             root_label,
         ],
         Firmware::Bios => vec![format!("{} 10 MB BIOS GRUB boot", part(1)), root_label],
+    };
+    if config.filesystem == crate::config::Filesystem::Btrfs {
+        let subvolumes: Vec<String> = crate::disk::btrfs::SUBVOLUMES
+            .iter()
+            .map(|subvol| format!("{} on {}", subvol.name, subvol.mount_point))
+            .collect();
+        layout.push(format!("  subvolumes: {}", subvolumes.join(", ")));
     }
+    layout
 }
 
 fn advanced_menu(ui: &mut dyn UserInterface, config: &mut SystemConfig) -> Result<()> {

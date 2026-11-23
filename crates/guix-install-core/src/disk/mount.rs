@@ -1,15 +1,16 @@
 use std::path::PathBuf;
 
 use crate::config::{Filesystem, Firmware, SystemConfig};
-use crate::disk::{Action, btrfs, partition_path};
+use crate::disk::{Action, btrfs, partition_path, root_device};
 
 /// Builds the mount action sequence for the target system.
 ///
-/// Always mounts root by label (each btrfs subvolume in turn), then for EFI
+/// Mounts root by device path (each btrfs subvolume in turn), then for EFI
 /// also mounts the boot partition. Starts the cow-store and creates config
 /// directories.
 pub fn mount_actions(config: &SystemConfig) -> Vec<Action> {
     let mut actions = Vec::new();
+    let root_device = root_device(config);
 
     match config.filesystem {
         Filesystem::Btrfs => {
@@ -20,15 +21,24 @@ pub fn mount_actions(config: &SystemConfig) -> Vec<Action> {
                 }
                 actions.push(Action::cmd(&[
                     "mount",
+                    "-t",
+                    "btrfs",
                     "-o",
                     &subvol.mount_options(),
-                    "LABEL=my-root",
+                    &root_device,
                     &target,
                 ]));
             }
         }
         Filesystem::Ext4 | Filesystem::Xfs => {
-            actions.push(Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+            let fs_type = config.filesystem.to_string();
+            actions.push(Action::cmd(&[
+                "mount",
+                "-t",
+                &fs_type,
+                &root_device,
+                "/mnt",
+            ]));
         }
     }
 
@@ -113,7 +123,10 @@ mod tests {
         let actions = mount_actions(&config);
         // mount root + cow-store + mkdir = 3
         assert_eq!(actions.len(), 3);
-        assert_eq!(actions[0], Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+        assert_eq!(
+            actions[0],
+            Action::cmd(&["mount", "-t", "ext4", "/dev/sda2", "/mnt"])
+        );
         assert_eq!(
             actions[1],
             Action::cmd(&["herd", "start", "cow-store", "/mnt"])
@@ -134,9 +147,11 @@ mod tests {
             actions[0],
             Action::cmd(&[
                 "mount",
+                "-t",
+                "btrfs",
                 "-o",
                 "subvol=@,compress=zstd",
-                "LABEL=my-root",
+                "/dev/sda2",
                 "/mnt"
             ])
         );
@@ -145,9 +160,11 @@ mod tests {
             actions[2],
             Action::cmd(&[
                 "mount",
+                "-t",
+                "btrfs",
                 "-o",
                 "subvol=@home,compress=zstd",
-                "LABEL=my-root",
+                "/dev/sda2",
                 "/mnt/home"
             ])
         );
@@ -156,9 +173,11 @@ mod tests {
             actions[4],
             Action::cmd(&[
                 "mount",
+                "-t",
+                "btrfs",
                 "-o",
                 "subvol=@gnu,compress=zstd",
-                "LABEL=my-root",
+                "/dev/sda2",
                 "/mnt/gnu"
             ])
         );
@@ -167,9 +186,11 @@ mod tests {
             actions[6],
             Action::cmd(&[
                 "mount",
+                "-t",
+                "btrfs",
                 "-o",
                 "subvol=@swap,compress=zstd",
-                "LABEL=my-root",
+                "/dev/sda2",
                 "/mnt/swap"
             ])
         );
@@ -197,7 +218,10 @@ mod tests {
         let actions = mount_actions(&config);
         // mount root + mkdir boot + mount boot + cow-store + mkdir config = 5
         assert_eq!(actions.len(), 5);
-        assert_eq!(actions[0], Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+        assert_eq!(
+            actions[0],
+            Action::cmd(&["mount", "-t", "ext4", "/dev/sda2", "/mnt"])
+        );
         assert_eq!(actions[1], Action::mkdir("/mnt/boot/efi"));
         assert_eq!(
             actions[2],

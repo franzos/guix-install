@@ -127,7 +127,7 @@ In the bare install environment there's no desktop, so it runs under [`cage`](ht
 
 ## Phases
 
-8 phases, state persisted to `/tmp/.guix-install-state` after each:
+8 phases, state persisted to `/run/guix-install-state` after each:
 
 1. Partition (parted, BIOS/EFI auto-detected from `/sys/firmware/efi`)
 2. Format (ext4/btrfs/xfs, optional LUKS)
@@ -138,13 +138,14 @@ In the bare install environment there's no desktop, so it runs under [`cage`](ht
 7. `guix pull` (skipped for plain Guix)
 8. `guix system init`, set user password
 
-Re-running picks up at the failed phase. Change disk/mode/firmware and state is discarded.
+When an install fails, the installer lets go of the disk (swap off, store overlay and mounts gone, LUKS closed) and keeps your answers, so the next run offers them again and starts over from partitioning. It only skips phases when the installer process itself died and the target is still mounted. A finished install releases the disk the same way, so you can reboot or install again without rebooting the ISO. If something else still holds the disk (another mount, an open LUKS mapping, a process started mid-install), it says so and stops before touching it.
 
 ## Notes
 
 - **Passwords never land in `system.scm`.** SHA-512-crypted in-process, atomically written to `/mnt/etc/shadow` (sibling-write + fsync + rename + dir fsync). Plaintext held in `Zeroizing<String>`. No `chroot`/`chpasswd`.
 - **Substitute keys compiled in** via `include_str!`.
 - **Enterprise tarballs streamed** through `ureq → flate2 → tar`. No intermediate file.
+- **Partitions are referenced by UUID**, picked before formatting and written to the root filesystem (or the LUKS container) and the EFI partition. `system.scm` and GRUB point at those, not at a label or `/dev/...` path, so a second disk with another install on it can't be mistaken for this one.
 - **Partition naming** handles NVMe/MMC (`/dev/nvme0n1p1`) vs SATA (`/dev/sda1`) via `disk::partition_path`.
 - **Btrfs gets a flat subvolume layout**: `@` on `/`, `@home` on `/home`, `@gnu` on `/gnu`, `@swap` on `/swap` (holding the swap file), all mounted with `compress=zstd`. A snapshot of `@` leaves user data and the store alone, so `guix gc` keeps freeing space while snapshots are retained, and the swap file doesn't block snapshotting. One caveat: the store's database lives in `/var/guix` on `@`, so if you delete system generations, run `guix gc`, and then roll `@` back past that point, run `guix gc --verify=contents,repair` to refetch what the rolled-back database still expects.
 - **LUKS passphrases**, like passwords, stay in `Zeroizing<String>` and reach `cryptsetup` over stdin (`--key-file -`), never argv, disk, or saved state.

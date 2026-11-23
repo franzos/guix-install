@@ -66,6 +66,18 @@ pub fn close() {
     guard.clear();
 }
 
+/// Flushes and drops the sink on the install target, keeping the live one.
+pub fn close_target() {
+    let Ok(mut guard) = LOG.lock() else { return };
+    guard.retain_mut(|(path, writer)| {
+        if path != Path::new(TARGET_LOG_PATH) {
+            return true;
+        }
+        let _ = writer.flush();
+        false
+    });
+}
+
 /// Appends a single timestamped line to every open sink. No-op if none are open.
 pub fn write_line(prefix: &str, msg: &str) {
     let Ok(mut guard) = LOG.lock() else { return };

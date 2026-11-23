@@ -216,7 +216,7 @@ fn format_btrfs_plain_sata() {
         cmds[0],
         vec!["mkfs.btrfs", "-f", "-L", "my-root", "/dev/sda2"]
     );
-    assert_eq!(cmds[1], vec!["mount", "/dev/sda2", "/mnt"]);
+    assert_eq!(cmds[1], vec!["mount", "-t", "btrfs", "/dev/sda2", "/mnt"]);
     assert_eq!(cmds[2], vec!["btrfs", "subvolume", "create", "/mnt/@"]);
     assert_eq!(cmds[6], vec!["umount", "/mnt"]);
 }
@@ -244,7 +244,7 @@ fn format_btrfs_encrypted() {
     let cmds = format_root_commands(&config);
     assert_eq!(cmds.len(), 7);
     assert_eq!(cmds[0][4], "/dev/mapper/cryptroot");
-    assert_eq!(cmds[1][1], "/dev/mapper/cryptroot");
+    assert_eq!(cmds[1][3], "/dev/mapper/cryptroot");
 }
 
 #[test]
@@ -274,19 +274,19 @@ fn format_xfs_encrypted() {
 
 #[test]
 fn format_efi_partition() {
-    let cmds = format_efi_commands("/dev/sda");
+    let cmds = format_efi_commands("/dev/sda", None);
     assert_eq!(cmds[0], vec!["mkfs.fat", "-I", "-F32", "/dev/sda1"]);
 }
 
 #[test]
 fn format_efi_nvme() {
-    let cmds = format_efi_commands("/dev/nvme0n1");
+    let cmds = format_efi_commands("/dev/nvme0n1", None);
     assert_eq!(cmds[0][3], "/dev/nvme0n1p1");
 }
 
 #[test]
 fn encryption_commands_sata() {
-    let cmds = encryption_commands("/dev/sda", "cryptroot");
+    let cmds = encryption_commands("/dev/sda", "cryptroot", None);
     assert_eq!(cmds.len(), 2);
     assert_eq!(
         cmds[0],
@@ -316,7 +316,7 @@ fn encryption_commands_sata() {
 
 #[test]
 fn encryption_commands_nvme() {
-    let cmds = encryption_commands("/dev/nvme0n1", "cryptroot");
+    let cmds = encryption_commands("/dev/nvme0n1", "cryptroot", None);
     assert_eq!(cmds[0].last().unwrap(), "/dev/nvme0n1p2");
     assert_eq!(cmds[1][cmds[1].len() - 2], "/dev/nvme0n1p2");
 }
@@ -361,7 +361,10 @@ fn mount_bios_sequence() {
 
     let actions = mount_actions(&config);
     assert_eq!(actions.len(), 3);
-    assert_eq!(actions[0], Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+    assert_eq!(
+        actions[0],
+        Action::cmd(&["mount", "-t", "ext4", "/dev/sda2", "/mnt"])
+    );
     assert_eq!(
         actions[1],
         Action::cmd(&["herd", "start", "cow-store", "/mnt"])
@@ -375,7 +378,10 @@ fn mount_efi_sequence() {
 
     let actions = mount_actions(&config);
     assert_eq!(actions.len(), 5);
-    assert_eq!(actions[0], Action::cmd(&["mount", "LABEL=my-root", "/mnt"]));
+    assert_eq!(
+        actions[0],
+        Action::cmd(&["mount", "-t", "ext4", "/dev/sda2", "/mnt"])
+    );
     assert_eq!(actions[1], Action::mkdir("/mnt/boot/efi"));
     assert_eq!(
         actions[2],
@@ -439,5 +445,95 @@ fn swap_custom_size() {
             path: PathBuf::from("/mnt/swapfile"),
             size_bytes: 8192 * 1024 * 1024,
         }
+    );
+}
+
+// --- Partition UUIDs ---
+
+const ROOT_UUID: &str = "0f6b1c2e-7a41-4c1d-9b55-3e8a2f4d6c10";
+
+fn uuid_config(filesystem: Filesystem, encrypt: bool) -> SystemConfig {
+    let mut config = test_config("/dev/nvme0n1", "nvme0n1");
+    config.filesystem = filesystem;
+    config.disk.root_partition_uuid = Some(ROOT_UUID.into());
+    config.disk.boot_partition_uuid = Some("1A2B-3C4D".into());
+    if encrypt {
+        config.encryption = Some(EncryptionConfig {
+            device_target: "cryptroot".into(),
+            passphrase: None,
+        });
+    }
+    config
+}
+
+#[test]
+fn format_assigns_the_configured_uuids() {
+    let has = |cmds: &[Vec<String>], args: &[&str]| {
+        cmds.iter()
+            .any(|cmd| cmd.windows(args.len()).any(|w| w == args))
+    };
+
+    let ext4 = format_commands(&uuid_config(Filesystem::Ext4, false));
+    assert!(has(&ext4, &["mkfs.fat", "-I", "-F32", "-i", "1A2B3C4D"]));
+    assert!(has(&ext4, &["-U", ROOT_UUID, "/dev/nvme0n1p2"]));
+
+    let btrfs = format_commands(&uuid_config(Filesystem::Btrfs, false));
+    assert!(has(&btrfs, &["-U", ROOT_UUID, "/dev/nvme0n1p2"]));
+
+    let xfs = format_commands(&uuid_config(Filesystem::Xfs, false));
+    assert!(has(
+        &xfs,
+        &["-m", &format!("uuid={ROOT_UUID}"), "/dev/nvme0n1p2"]
+    ));
+
+    // Encrypted: the UUID goes to the LUKS container, not the filesystem in it.
+    let luks = format_commands(&uuid_config(Filesystem::Ext4, true));
+    assert!(has(&luks, &["--uuid", ROOT_UUID, "/dev/nvme0n1p2"]));
+    assert!(!has(&luks, &["-U", ROOT_UUID]));
+}
+
+#[test]
+fn mount_uses_the_target_device_not_a_label() {
+    let plain = mount_actions(&uuid_config(Filesystem::Ext4, false));
+    assert_eq!(
+        plain[0],
+        Action::cmd(&["mount", "-t", "ext4", "/dev/nvme0n1p2", "/mnt"])
+    );
+
+    let luks = mount_actions(&uuid_config(Filesystem::Ext4, true));
+    assert_eq!(
+        luks[0],
+        Action::cmd(&["mount", "-t", "ext4", "/dev/mapper/cryptroot", "/mnt"])
+    );
+}
+
+#[test]
+fn assigned_uuids_are_well_formed_and_stable() {
+    let mut disk = test_config("/dev/sda", "sda").disk;
+    disk.assign_partition_uuids();
+    let root = disk.root_partition_uuid.clone().unwrap();
+    let boot = disk.boot_partition_uuid.clone().unwrap();
+
+    let groups: Vec<usize> = root.split('-').map(str::len).collect();
+    assert_eq!(groups, [8, 4, 4, 4, 12]);
+    assert!(root.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+    assert_eq!(boot.len(), 9);
+    assert_eq!(boot.as_bytes()[4], b'-');
+
+    disk.assign_partition_uuids();
+    assert_eq!(disk.root_partition_uuid.unwrap(), root);
+    assert_eq!(disk.boot_partition_uuid.unwrap(), boot);
+}
+
+#[test]
+fn old_signatures_are_wiped_from_both_partitions() {
+    use guix_install_core::disk::format::wipe_commands;
+
+    assert_eq!(
+        wipe_commands("/dev/nvme0n1"),
+        vec![
+            vec!["wipefs", "-a", "/dev/nvme0n1p1"],
+            vec!["wipefs", "-a", "/dev/nvme0n1p2"],
+        ]
     );
 }

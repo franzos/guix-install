@@ -34,16 +34,20 @@ pub fn parse_lsblk_json(json: &str) -> Result<Vec<BlockDevice>> {
         .filter(|d| {
             d.device_type == "disk" && d.size.unwrap_or(0) >= MIN_SIZE && !d.name.starts_with("fd")
         })
-        .map(|d| BlockDevice {
-            name: d.name,
-            dev_path: d.path.unwrap_or_default(),
-            size_bytes: d.size.unwrap_or(0),
-            model: d
-                .model
-                .map(|m| m.trim().to_string())
-                .filter(|m| !m.is_empty()),
-            boot_partition_uuid: None,
-            root_partition_uuid: None,
+        .map(|d| {
+            let mut device = BlockDevice {
+                name: d.name,
+                dev_path: d.path.unwrap_or_default(),
+                size_bytes: d.size.unwrap_or(0),
+                model: d
+                    .model
+                    .map(|m| m.trim().to_string())
+                    .filter(|m| !m.is_empty()),
+                boot_partition_uuid: None,
+                root_partition_uuid: None,
+            };
+            device.assign_partition_uuids();
+            device
         })
         .collect();
 

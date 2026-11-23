@@ -204,7 +204,7 @@ fn build_config(cli: &Cli) -> Result<SystemConfig> {
         None
     };
 
-    Ok(SystemConfig {
+    let mut config = SystemConfig {
         mode,
         firmware: Firmware::detect(),
         hostname,
@@ -231,7 +231,9 @@ fn build_config(cli: &Cli) -> Result<SystemConfig> {
         swap_size_mb: cli.swap,
         password: None,
         system_scm_override: None,
-    })
+    };
+    config.disk.assign_partition_uuids();
+    Ok(config)
 }
 
 fn run_interactive(dry_run: bool) -> Result<()> {
@@ -295,7 +297,8 @@ fn run_unattended(cli: &Cli) -> Result<()> {
         "no"
     };
     println!(
-        "Unattended install: mode={} disk={} filesystem={} encrypt={}",
+        "guix-install {} unattended install: mode={} disk={} filesystem={} encrypt={}",
+        env!("CARGO_PKG_VERSION"),
         config.mode.label(),
         config.disk.dev_path,
         config.filesystem,

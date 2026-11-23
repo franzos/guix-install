@@ -229,9 +229,10 @@ fn render_file_systems(config: &SystemConfig) -> String {
         Filesystem::Xfs => "xfs",
     };
 
-    let root_device = match &config.encryption {
-        Some(enc) => format!("\"/dev/mapper/{}\"", enc.device_target),
-        None => "(file-system-label \"my-root\")".to_string(),
+    let root_device = match (&config.encryption, &config.disk.root_partition_uuid) {
+        (Some(enc), _) => format!("\"/dev/mapper/{}\"", enc.device_target),
+        (None, Some(uuid)) => format!("(uuid \"{uuid}\" '{fs_type})"),
+        (None, None) => "(file-system-label \"my-root\")".to_string(),
     };
     let dependencies = config
         .encryption

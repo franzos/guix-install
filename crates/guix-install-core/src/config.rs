@@ -80,6 +80,34 @@ pub struct BlockDevice {
     pub root_partition_uuid: Option<String>,
 }
 
+impl BlockDevice {
+    /// Picks the identifiers the partitions get formatted with, so the config
+    /// names this disk's partitions and no other disk's.
+    pub fn assign_partition_uuids(&mut self) {
+        use rand::Rng;
+
+        let mut rng = rand::thread_rng();
+        if self.root_partition_uuid.is_none() {
+            let mut b: [u8; 16] = rng.r#gen();
+            b[6] = (b[6] & 0x0f) | 0x40;
+            b[8] = (b[8] & 0x3f) | 0x80;
+            let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
+            self.root_partition_uuid = Some(format!(
+                "{}-{}-{}-{}-{}",
+                &hex[0..8],
+                &hex[8..12],
+                &hex[12..16],
+                &hex[16..20],
+                &hex[20..32]
+            ));
+        }
+        if self.boot_partition_uuid.is_none() {
+            let id: u32 = rng.r#gen();
+            self.boot_partition_uuid = Some(format!("{:04X}-{:04X}", id >> 16, id & 0xffff));
+        }
+    }
+}
+
 impl fmt::Display for Firmware {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
