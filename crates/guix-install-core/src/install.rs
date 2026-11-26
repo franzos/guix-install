@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::config::SystemConfig;
+use crate::config::{DesktopEnvironment, SystemConfig};
 use crate::enterprise;
 use crate::installer_log;
 use crate::mode::InstallMode;
@@ -705,6 +705,12 @@ fn phase_config(
         if let Some(password) = &config.password {
             passwd::seed_shadow(Path::new("/mnt"), &config.users, password)?;
             ui.info("  Seeded /mnt/etc/shadow");
+        }
+
+        // LXQt ships several sessions and GDM would start bare labwc.
+        if matches!(config.desktop, Some(DesktopEnvironment::Lxqt)) {
+            passwd::seed_default_session(Path::new("/mnt"), &config.users, "lxqt")?;
+            ui.info("  Set LXQt as the default session");
         }
     }
 

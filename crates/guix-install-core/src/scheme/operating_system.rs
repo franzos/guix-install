@@ -524,9 +524,10 @@ fn desktop_service(de: &DesktopEnvironment) -> Option<String> {
 }
 
 /// The Guix installer's package sets (gnu/installer/services.scm), plus the
-/// GSettings schemas the GDM greeter needs and no desktop service provides here.
+/// GSettings schemas GDM needs, for every desktop that doesn't bring them itself.
 fn desktop_packages(de: &DesktopEnvironment) -> &'static [&'static str] {
     match de {
+        DesktopEnvironment::Mate | DesktopEnvironment::Lxqt => &["gsettings-desktop-schemas"],
         DesktopEnvironment::Sway => &["sway", "wmenu", "foot", "gsettings-desktop-schemas"],
         DesktopEnvironment::I3 => &[
             "i3-wm",

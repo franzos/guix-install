@@ -642,6 +642,35 @@ fn post_install_note_names_software_only_on_panther_desktop() {
     assert!(post_install_note(&config).contains("guix pull"));
 }
 
+#[test]
+fn desktops_without_gsettings_schemas_get_them_as_a_package() {
+    for mode in [
+        InstallMode::Guix,
+        InstallMode::Nonguix,
+        InstallMode::Panther,
+    ] {
+        for (de, expected) in [
+            (DesktopEnvironment::Kde, false),
+            (DesktopEnvironment::Mate, true),
+            (DesktopEnvironment::Lxqt, true),
+            (DesktopEnvironment::Gnome, false),
+            (DesktopEnvironment::Xfce, false),
+        ] {
+            let mut config = base_config();
+            config.mode = mode.clone();
+            config.desktop = Some(de);
+
+            let output = render_operating_system(&config);
+            assert_scheme_structure(&output);
+            assert_eq!(
+                output.contains(r#"'("gsettings-desktop-schemas")"#),
+                expected,
+                "{output}"
+            );
+        }
+    }
+}
+
 // --- Window managers: packages instead of a desktop service ---
 
 #[test]

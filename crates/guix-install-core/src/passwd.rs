@@ -120,6 +120,18 @@ pub fn seed_shadow(root: &Path, users: &[UserAccount], password: &Zeroizing<Stri
     atomic_write(&shadow_path, body.as_bytes(), 0o600)
 }
 
+/// Saves `session` as each user's default in AccountsService, where GDM reads it.
+pub fn seed_default_session(root: &Path, users: &[UserAccount], session: &str) -> Result<()> {
+    let dir = root.join("var/lib/AccountsService/users");
+    fs::create_dir_all(&dir).with_context(|| format!("mkdir {}", dir.display()))?;
+    for user in users {
+        let path = dir.join(&user.name);
+        fs::write(&path, format!("[User]\nSession={session}\n"))
+            .with_context(|| format!("write {}", path.display()))?;
+    }
+    Ok(())
+}
+
 /// Atomically write `contents` to `path` with `mode`.
 ///
 /// Writes to a sibling `.new` file (mode 0600 during construction, then
@@ -183,6 +195,17 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert!(lines[0].starts_with("alice:$6$"));
         assert!(lines[1].starts_with("bob:$6$"));
+    }
+
+    #[test]
+    fn seed_default_session_writes_one_file_per_user() {
+        let tmp = tempfile::tempdir().unwrap();
+        seed_default_session(tmp.path(), &[user("alice"), user("bob")], "lxqt").unwrap();
+
+        for name in ["alice", "bob"] {
+            let path = tmp.path().join("var/lib/AccountsService/users").join(name);
+            assert_eq!(fs::read_to_string(path).unwrap(), "[User]\nSession=lxqt\n");
+        }
     }
 
     #[test]
