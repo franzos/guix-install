@@ -1388,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "guix-install"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "anyhow",
  "clap",
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "guix-install-core"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "anyhow",
  "base64",
@@ -1421,7 +1421,7 @@ dependencies = [
 
 [[package]]
 name = "guix-install-gui"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "anyhow",
  "guix-install-core",

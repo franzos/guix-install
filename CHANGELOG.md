@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.22] - 2026-11-26
+
+### Fixed
+- MATE and LXQt installs booted without a login screen.
+- LXQt logins started an empty session.
+
 ## [0.1.21] - 2026-11-23
 
 ### Added
